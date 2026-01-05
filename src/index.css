@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Importación de fuente para asegurar que se cargue independientemente del HTML */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800;900&display=swap');
+
+/* Verzing - Sistema de Diseño Premium 
+   Paleta: Warm Minimalist 
+*/
+:root {
+  --bg-primary: #FDFCFB;
+  --text-main: #1A1A1A;
+  --accent: #D97706; /* Color Ámbar Verzing */
+  --accent-soft: rgba(217, 119, 6, 0.1);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    /* Evita el salto visual al abrir modales en navegadores de escritorio */
+    margin-right: calc(100vw - 100%);
+  }
+
+  body {
+    /* Aquí forzamos el color de fondo y texto base si Tailwind aún no procesa los colores personalizados */
+    background-color: #FDFCFB;
+    color: #1A1A1A;
+    @apply antialiased;
+    font-family: 'Inter', sans-serif;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Color de selección personalizado para la marca */
+  ::selection {
+    background-color: #fef3c7; /* Ámbar muy claro */
+    color: #92400e; /* Ámbar oscuro */
+  }
+}
+
+@layer components {
+  /* Efecto de texto con borde para títulos Hero (Estilo Streetwear) */
+  .border-text {
+    -webkit-text-stroke: 1px #1A1A1A;
+    color: transparent;
+    @apply transition-all duration-700;
+  }
+
+  /* Utilidad para ocultar scrollbars manteniendo el desplazamiento funcional */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Contenedor base para las tarjetas de producto con suavizado de transformación */
+  .product-card-container {
+    @apply transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)];
+  }
+
+  /* Animación de entrada por capas (Fade-In + Slide-Up) */
+  .fade-up {
+    opacity: 0;
+    animation: fadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  /* Estilo base para botones premium de la marca */
+  .btn-verzing-base {
+    @apply relative overflow-hidden transition-all duration-300 active:scale-95;
+    background-color: #1A1A1A;
+    color: white;
+  }
+}
+
+@layer utilities {
+  /* Espaciado de letras refinado para títulos */
+  .tracking-tight-verzing {
+    letter-spacing: -0.05em;
+  }
+  
+  /* Máscara de gradiente para imágenes */
+  .mask-gradient {
+    mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+  }
+}
+
+/* Definición de Keyframes para animaciones de interfaz */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Ajustes específicos para Chart.js en contenedores responsivos */
+.chart-container {
+  position: relative;
+  width: 100%;
+  @apply transition-opacity duration-500;
+}
+
+/* Personalización del scrollbar global (Minimalista) */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #FDFCFB;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #E5E5E5;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #D1D1D1;
+}
