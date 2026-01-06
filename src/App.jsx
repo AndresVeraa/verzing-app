@@ -380,8 +380,8 @@ const AdminPanel = ({ products, setProducts }) => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-6 mb-20 animate-in fade-in slide-in-from-top-4">
-      <div className="bg-white border-2 border-neutral-100 rounded-[2.5rem] p-10">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 mb-20 animate-in fade-in slide-in-from-top-4">
+      <div className="bg-white border-2 border-neutral-100 rounded-[2.5rem] p-6 sm:p-10">
         <div className="flex justify-between items-center mb-10">
           <div>
             <h2 className="text-3xl font-black uppercase tracking-tighter">Inventario Verzing</h2>
@@ -488,8 +488,8 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <nav className="fixed top-0 w-full z-[100] h-20 bg-[#FDFCFB]/90 backdrop-blur-xl border-b border-black/5">
-      <div className="max-w-7xl mx-auto px-6 h-full flex justify-between items-center text-left">
+    <nav className="fixed top-0 w-full z-[100] h-16 md:h-20 bg-[#FDFCFB]/90 backdrop-blur-xl border-b border-black/5">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-full flex justify-between items-center text-left">
         <div className="text-2xl font-black tracking-tighter cursor-pointer group" onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})}>
           VERZING<span className="text-amber-600 group-hover:animate-pulse">.</span>
         </div>
@@ -500,6 +500,11 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
             ✨ Asistente AI
           </button>
         </div>
+
+        {/* Mobile menu button */}
+        <button onClick={() => setMobileMenuOpen(true)} className="md:hidden p-2 bg-neutral-50 rounded-full shadow-sm">
+          <Menu size={18} />
+        </button> 
 
         <div className="flex items-center space-x-5">
           {userRole ? (
@@ -527,6 +532,27 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
           </div>
         </div>
       </div>
+
+      {/* Mobile slide-over menu */}
+      {mobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 z-50 bg-black/60 flex justify-end">
+          <div className="w-72 bg-white h-full p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="text-lg font-black">VERZING</div>
+              <button onClick={() => setMobileMenuOpen(false)} className="p-2 rounded-full hover:bg-neutral-100"><X size={18} /></button>
+            </div>
+            <nav className="flex flex-col gap-4">
+              <a href="#catalog" onClick={() => { setMobileMenuOpen(false); document.getElementById('catalog').scrollIntoView({behavior: 'smooth'}); }} className="uppercase font-bold">Catálogo</a>
+              <button onClick={() => { onOpenAssistant(); setMobileMenuOpen(false);}} className="text-left uppercase font-bold">✨ Asistente AI</button>
+              {userRole ? (
+                <button onClick={() => { onLogout(); setMobileMenuOpen(false); }} className="text-left text-rose-500">Cerrar sesión</button>
+              ) : (
+                <button onClick={() => { onOpenLogin(); setMobileMenuOpen(false); }} className="text-left">Acceder</button>
+              )}
+            </nav>
+          </div>
+        </div>
+      )}
     </nav>
   );
 };
@@ -539,26 +565,33 @@ const Hero = ({ onOpenAssistant }) => (
           <span className="w-8 h-[1px] bg-amber-600"></span>
           Drop 2026 / Selección Auténtica
         </h4>
-        <h1 className="text-6xl sm:text-7xl md:text-8xl font-black tracking-tighter leading-[0.85] mb-10 uppercase">
+        <h1 className="text-4xl sm:text-6xl md:text-8xl font-black tracking-tighter leading-[0.85] mb-6 sm:mb-10 uppercase">
           SNEAKERS<br />QUE <span className="border-text italic">HABLAN</span><br />POR TI.
         </h1>
-        <p className="text-gray-500 max-w-sm mb-12 text-sm leading-relaxed font-medium">
+        <p className="text-gray-500 max-w-sm mb-6 text-sm leading-relaxed font-medium">
           Curaduría premium de calzado Triple A. Tu estilo no tiene límites, nuestra calidad tampoco.
         </p>
-        <div className="flex gap-4">
+        <div className="flex flex-col sm:flex-row gap-4">
           <button 
             onClick={() => document.getElementById('catalog').scrollIntoView({ behavior: 'smooth' })}
-            className="bg-black text-white px-10 py-5 text-[10px] font-black uppercase tracking-[0.2em] hover:bg-amber-600 transition-all shadow-xl shadow-black/10"
+            className="bg-black text-white px-8 py-4 sm:px-10 sm:py-5 text-[10px] font-black uppercase tracking-[0.2em] hover:bg-amber-600 transition-all shadow-xl shadow-black/10"
           >
             Explorar Catálogo
           </button>
           <button 
             onClick={onOpenAssistant}
-            className="border-2 border-black px-10 py-5 text-[10px] font-black uppercase tracking-[0.2em] hover:bg-black hover:text-white transition-all flex items-center justify-center gap-2"
+            className="border-2 border-black px-8 py-4 sm:px-10 sm:py-5 text-[10px] font-black uppercase tracking-[0.2em] hover:bg-black hover:text-white transition-all flex items-center justify-center gap-2"
           >
             ✨ Consultar IA
           </button>
         </div>
+
+        {/* Small-screen hero image */}
+        <div className="md:hidden mt-8 w-full flex justify-center">
+          <div className="w-11/12 aspect-[3/2] rounded-2xl overflow-hidden shadow-2xl">
+            <img src="https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&q=80&w=1000" alt="Verzing" className="w-full h-full object-cover" />
+          </div>
+        </div> 
       </div>
       <div className="relative hidden md:flex items-center justify-center">
         <div className="w-full aspect-square relative rounded-[3rem] overflow-hidden shadow-2xl">
@@ -897,11 +930,11 @@ export default function App() {
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-12 gap-y-20">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-12">
             {filteredProducts.map((p) => (
               <ProductCard key={p.id} product={p} onClick={setSelectedProduct} />
             ))}
-          </div>
+          </div> 
         </div>
       </section>
 
