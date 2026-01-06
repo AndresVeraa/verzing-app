@@ -331,53 +331,75 @@ const LoginModal = ({ isOpen, onClose, onLogin }) => {
   );
 };
 
-const AdminPanel = ({ products, setProducts }) => {
+const AdminPanel = ({ products, setProducts, onNotify }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
-    const [formData, setFormData] = useState({ name: '', price: '', vibe: 'Streetwear', sizes: '', imageDataUrl: '' });
+    const [formData, setFormData] = useState({ name: '', price: '', vibe: 'Streetwear', sizes: '', imagesDataUrls: [] });
 
-    // Maneja la carga de archivos y los convierte a Data URL para persistir en localStorage
-    const handleFileChange = (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => setFormData(prev => ({ ...prev, imageDataUrl: reader.result }));
-      reader.readAsDataURL(file);
+    // Maneja la carga de múltiples archivos y los convierte a Data URLs para persistir en localStorage
+    const handleFileChange = async (e) => {
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+      // Read all files as Data URLs
+      const readFile = (file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      try {
+        const urls = await Promise.all(files.map(f => readFile(f)));
+        setFormData(prev => ({ ...prev, imagesDataUrls: [...(prev.imagesDataUrls || []), ...urls] }));
+      } catch (err) {
+        // ignore failures for now
+      }
+    };
+
+    const removeImageAt = (index) => {
+      setFormData(prev => ({ ...prev, imagesDataUrls: prev.imagesDataUrls.filter((_, i) => i !== index) }));
     };
 
     const handleSave = (e) => {
       e.preventDefault();
+      const imgField = (formData.imagesDataUrls && formData.imagesDataUrls.length > 0)
+        ? (formData.imagesDataUrls.length === 1 ? formData.imagesDataUrls[0] : formData.imagesDataUrls)
+        : "https://images.unsplash.com/photo-1556906781-9a412961d28c?auto=format&fit=crop&q=80&w=600";
+
       const newProduct = {
         id: editingId || Date.now(),
         name: formData.name,
         price: parseInt(formData.price),
         vibe: formData.vibe,
-        image: formData.imageDataUrl || "https://images.unsplash.com/photo-1556906781-9a412961d28c?auto=format&fit=crop&q=80&w=600",
+        image: imgField,
         sizes: formData.sizes.split(',').map(s => parseInt(s.trim())),
         popularity: Array.from({length: 6}, () => Math.floor(Math.random() * 100))
       };
 
       if (editingId) {
         setProducts(products.map(p => p.id === editingId ? newProduct : p));
+        onNotify && onNotify('Producto actualizado');
       } else {
         setProducts([...products, newProduct]);
+        onNotify && onNotify('Producto creado');
       }
       setIsAdding(false);
       setEditingId(null);
-      setFormData({ name: '', price: '', vibe: 'Streetwear', sizes: '', imageDataUrl: '' });
-    }; 
+      setFormData({ name: '', price: '', vibe: 'Streetwear', sizes: '', imagesDataUrls: [] });
+    };   
 
   const handleEdit = (p) => {
-    setFormData({ name: p.name, price: p.price, vibe: p.vibe, sizes: p.sizes.join(', '), imageDataUrl: p.image });
+    const imgs = Array.isArray(p.image) ? p.image : (p.image ? [p.image] : []);
+    setFormData({ name: p.name, price: p.price, vibe: p.vibe, sizes: p.sizes.join(', '), imagesDataUrls: imgs });
     setEditingId(p.id);
     setIsAdding(true);
-  }; 
+  };  
 
   const handleDelete = (id) => {
     if (confirm('¿Eliminar este producto permanentemente?')) {
       setProducts(products.filter(p => p.id !== id));
+      onNotify && onNotify('Producto eliminado');
     }
-  };
+  }; 
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 mb-20 animate-in fade-in slide-in-from-top-4">
@@ -435,16 +457,25 @@ const AdminPanel = ({ products, setProducts }) => {
               />
 
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block">Foto del Modelo</label>
+                <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block">Fotos del Modelo</label>
                 <input 
                   type="file" 
                   accept="image/*" 
+                  multiple
                   onChange={handleFileChange}
                   className="w-full bg-white px-6 py-4 rounded-xl border border-neutral-200 outline-none focus:border-amber-600"
                 />
-                {formData.imageDataUrl && (
-                  <div className="mt-4 w-36 h-36 rounded-xl overflow-hidden">
-                    <img src={formData.imageDataUrl} alt="Preview" className="w-full h-full object-cover" />
+
+                {formData.imagesDataUrls && formData.imagesDataUrls.length > 0 && (
+                  <div className="mt-4 grid grid-cols-4 gap-2">
+                    {formData.imagesDataUrls.map((src, idx) => (
+                      <div key={idx} className="relative w-20 h-20 rounded-xl overflow-hidden border border-neutral-200">
+                        <img src={src} alt={`Preview ${idx+1}`} className="w-full h-full object-cover" />
+                        <button type="button" onClick={() => removeImageAt(idx)} className="absolute top-1 right-1 p-1 bg-white rounded-full shadow-sm text-rose-500">
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -610,7 +641,7 @@ const Hero = ({ onOpenAssistant }) => (
 const ProductCard = ({ product, onClick }) => (
   <div className="group cursor-pointer animate-in fade-in duration-700" onClick={() => onClick(product)}>
     <div className="aspect-[4/5] bg-neutral-100 rounded-[2.5rem] mb-8 relative overflow-hidden flex items-center justify-center">
-      <img src={product.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
+      <img src={Array.isArray(product.image) ? product.image[0] : product.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
       <div className="absolute top-6 left-6 bg-white/90 backdrop-blur px-3 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-widest text-amber-600">
         {product.vibe}
       </div>
@@ -634,6 +665,11 @@ const ProductModal = ({ product, onClose }) => {
   const [selectedSize, setSelectedSize] = useState(null);
   const [aiAdvice, setAiAdvice] = useState(null);
   const [loadingAI, setLoadingAI] = useState(false);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+
+  useEffect(() => {
+    setActiveImageIndex(0);
+  }, [product]);
 
   if (!product) return null;
 
@@ -666,8 +702,19 @@ const ProductModal = ({ product, onClose }) => {
           <X size={20} />
         </button>
         <div className="md:w-1/2 bg-neutral-50 flex items-center justify-center p-12">
-          <div className="w-full aspect-square bg-white rounded-3xl flex items-center justify-center shadow-inner relative overflow-hidden">
-            <img src={product.image} className="w-full h-full object-cover" />
+          <div className="w-full max-w-md">
+            <div className="aspect-square bg-white rounded-3xl flex items-center justify-center shadow-inner relative overflow-hidden">
+              <img src={(Array.isArray(product.image) ? product.image[activeImageIndex] : product.image)} className="w-full h-full object-cover" />
+            </div>
+            {Array.isArray(product.image) && product.image.length > 1 && (
+              <div className="mt-4 flex gap-2 overflow-x-auto no-scrollbar">
+                {product.image.map((src, idx) => (
+                  <button key={idx} onClick={() => setActiveImageIndex(idx)} className={`w-20 h-20 rounded-xl overflow-hidden border-2 ${activeImageIndex === idx ? 'border-amber-600' : 'border-transparent'}`}>
+                    <img src={src} className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <div className="md:w-1/2 p-12 flex flex-col text-left">
@@ -833,6 +880,8 @@ export default function App() {
     const s = localStorage.getItem('verzing_session');
     return s ? JSON.parse(s).role : null;
   });
+  // Notification message (used to show cross-tab updates)
+  const [notif, setNotif] = useState('');
 
   const [products, setProducts] = useState(() => {
     const saved = localStorage.getItem('verzing_products');
@@ -859,6 +908,47 @@ export default function App() {
       localStorage.removeItem('verzing_session');
     }
   }, [userRole, currentUser]);
+
+  // Sync across tabs/windows: watch for localStorage changes
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'verzing_products' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          setProducts(parsed);
+          setNotif('Catálogo actualizado por otro administrador');
+          setTimeout(() => setNotif(''), 4000);
+        } catch (err) {
+          // ignore
+        }
+      }
+
+      if (e.key === 'verzing_session') {
+        if (e.newValue) {
+          try {
+            const s = JSON.parse(e.newValue);
+            setCurrentUser(s.displayName || s.username || null);
+            setUserRole(s.role || null);
+          } catch (err) {
+            // ignore
+          }
+        } else {
+          setCurrentUser(null);
+          setUserRole(null);
+        }
+      }
+    };
+
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  // Keep selected product in sync when products change (reflect edits or delete)
+  useEffect(() => {
+    if (!selectedProduct) return;
+    const updated = products.find(p => p.id === selectedProduct.id);
+    setSelectedProduct(updated || null);
+  }, [products, selectedProduct]);
 
   useEffect(() => {
     const handleScroll = () => setIsHeaderSticky(window.scrollY > 300);
@@ -907,7 +997,7 @@ export default function App() {
       <Hero onOpenAssistant={() => setIsAssistantOpen(true)} userRole={userRole} />
 
       {userRole === 'admin' && (
-        <AdminPanel products={products} setProducts={setProducts} />
+        <AdminPanel products={products} setProducts={setProducts} onNotify={(msg) => setNotif(msg)} />
       )}
 
       {/* Catálogo Section */}
