@@ -1,18 +1,14 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800;900&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Importación de fuente para asegurar que se cargue independientemente del HTML */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800;900&display=swap');
-
-/* Verzing - Sistema de Diseño Premium 
-   Paleta: Warm Minimalist 
-*/
 :root {
   --bg-primary: #FDFCFB;
   --text-main: #1A1A1A;
-  --accent: #D97706; /* Color Ámbar Verzing */
-  --accent-soft: rgba(217, 119, 6, 0.1);
+  --accent: #D97706;
 }
 
 @layer base {
