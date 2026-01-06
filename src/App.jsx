@@ -375,12 +375,15 @@ const AdminPanel = ({ products, setProducts, onNotify }) => {
         popularity: Array.from({length: 6}, () => Math.floor(Math.random() * 100))
       };
 
+      let updated = null;
       if (editingId) {
-        setProducts(products.map(p => p.id === editingId ? newProduct : p));
-        onNotify && onNotify('Producto actualizado');
+        updated = products.map(p => p.id === editingId ? newProduct : p);
+        setProducts(updated);
+        onNotify && onNotify({ action: 'update', product: newProduct, products: updated, message: 'Producto actualizado' });
       } else {
-        setProducts([...products, newProduct]);
-        onNotify && onNotify('Producto creado');
+        updated = [...products, newProduct];
+        setProducts(updated);
+        onNotify && onNotify({ action: 'create', product: newProduct, products: updated, message: 'Producto creado' });
       }
       setIsAdding(false);
       setEditingId(null);
@@ -396,8 +399,9 @@ const AdminPanel = ({ products, setProducts, onNotify }) => {
 
   const handleDelete = (id) => {
     if (confirm('¿Eliminar este producto permanentemente?')) {
-      setProducts(products.filter(p => p.id !== id));
-      onNotify && onNotify('Producto eliminado');
+      const updated = products.filter(p => p.id !== id);
+      setProducts(updated);
+      onNotify && onNotify({ action: 'delete', id, products: updated, message: 'Producto eliminado' });
     }
   }; 
 
@@ -414,7 +418,7 @@ const AdminPanel = ({ products, setProducts, onNotify }) => {
               if (isAdding) {
                 setIsAdding(false);
                 setEditingId(null);
-                setFormData({ name: '', price: '', vibe: 'Streetwear', sizes: '', imageDataUrl: '' });
+                setFormData({ name: '', price: '', vibe: 'Streetwear', sizes: '', imagesDataUrls: [] });
               } else {
                 setIsAdding(true);
               }
@@ -896,6 +900,32 @@ export default function App() {
   // Seed admin user on first run
   useEffect(() => { seedAdmin(); }, []);
 
+  // Broadcast channel ref for real-time updates across tabs
+  const bcRef = useRef(null);
+
+  useEffect(() => {
+    if ('BroadcastChannel' in window) {
+      bcRef.current = new BroadcastChannel('verzing_updates');
+      bcRef.current.onmessage = (ev) => {
+        const data = ev.data;
+        if (!data) return;
+        if (data.type === 'products_update' && data.products) {
+          setProducts(data.products);
+          setNotif(data.action === 'create' ? 'Nuevo producto agregado' : 'Catálogo actualizado');
+          setTimeout(() => setNotif(''), 4000);
+        }
+        if (data.type === 'session_update') {
+          // optional: update session from other tabs
+          if (data.session) {
+            setCurrentUser(data.session.displayName || data.session.username || null);
+            setUserRole(data.session.role || null);
+          }
+        }
+      };
+      return () => bcRef.current.close();
+    }
+  }, []);
+
   useEffect(() => {
     localStorage.setItem('verzing_products', JSON.stringify(products));
   }, [products]);
@@ -942,6 +972,29 @@ export default function App() {
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, []);
+
+  // Handle notifications & announcements from AdminPanel (and broadcast when admin makes changes)
+  const handleNotify = (msg) => {
+    if (!msg) return;
+    // backward-compatible: simple string messages
+    if (typeof msg === 'string') {
+      setNotif(msg);
+      setTimeout(() => setNotif(''), 4000);
+      return;
+    }
+
+    // msg: { action, product, id, products, message }
+    const { action, products: updatedProducts, message } = msg;
+    if (message) setNotif(message);
+    else setNotif(action === 'create' ? 'Producto creado' : 'Catálogo actualizado');
+    setTimeout(() => setNotif(''), 4000);
+
+    // Broadcast to other tabs immediately
+    if (bcRef.current && updatedProducts) {
+      bcRef.current.postMessage({ type: 'products_update', action, products: updatedProducts });
+    }
+  };
+
 
   // Keep selected product in sync when products change (reflect edits or delete)
   useEffect(() => {
@@ -997,7 +1050,7 @@ export default function App() {
       <Hero onOpenAssistant={() => setIsAssistantOpen(true)} userRole={userRole} />
 
       {userRole === 'admin' && (
-        <AdminPanel products={products} setProducts={setProducts} onNotify={(msg) => setNotif(msg)} />
+        <AdminPanel products={products} setProducts={setProducts} onNotify={(msg) => handleNotify(msg)} />
       )}
 
       {/* Catálogo Section */}
