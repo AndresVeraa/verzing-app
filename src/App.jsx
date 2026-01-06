@@ -71,55 +71,261 @@ async function callGemini(prompt, systemInstruction = "") {
   }
 }
 
+// --- SECURITY HELPERS ---
+
+const bufferToBase64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const base64ToBuffer = (b64) => Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+const generateSalt = () => {
+  const s = crypto.getRandomValues(new Uint8Array(16));
+  return bufferToBase64(s);
+};
+
+async function hashPassword(password, salt, iterations = 150000) {
+  const enc = new TextEncoder();
+  const saltBuf = base64ToBuffer(salt);
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: saltBuf, iterations, hash: 'SHA-256' }, keyMaterial, 256);
+  return bufferToBase64(bits);
+}
+
+function constantTimeCompare(a, b) {
+  if (a.length !== b.length) return false;
+  let res = 0;
+  for (let i = 0; i < a.length; i++) res |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return res === 0;
+}
+
+function getUsers() {
+  const raw = localStorage.getItem('verzing_users');
+  return raw ? JSON.parse(raw) : [];
+}
+
+function saveUsers(users) {
+  localStorage.setItem('verzing_users', JSON.stringify(users));
+}
+
+async function createUser({ username, password, role = 'user', firstName = '', lastName = '', email = '', phone = '' }) {
+  const users = getUsers();
+  if (users.find(u => u.username === username)) throw new Error('Usuario ya existe');
+  if (email && users.find(u => u.email === email)) throw new Error('Correo ya registrado');
+  if (phone && users.find(u => u.phone === phone)) throw new Error('Teléfono ya registrado');
+  const salt = generateSalt();
+  const hash = await hashPassword(password, salt);
+  users.push({ username, salt, hash, role, firstName, lastName, email, phone });
+  saveUsers(users);
+  return { username, role, firstName, lastName, email, phone };
+}
+
+async function verifyUser(username, password) {
+  const users = getUsers();
+  const user = users.find(u => u.username === username);
+  if (!user) return null;
+  const hash = await hashPassword(password, user.salt);
+  if (!constantTimeCompare(hash, user.hash)) return null;
+  // Return user info without salt/hash
+  const { salt, hash: h, ...rest } = user;
+  return rest;
+}
+
+async function seedAdmin() {
+  const users = getUsers();
+  if (!users.find(u => u.username === 'admin')) {
+    try {
+      await createUser({ username: 'admin', password: ADMIN_PASSWORD, role: 'admin', firstName: 'Admin', lastName: 'User', email: 'admin@verzing.local' });
+      // eslint-disable-next-line no-console
+      console.info('Admin seeded');
+    } catch (e) {
+      // ignore
+    }
+  }
+}
+
 // --- COMPONENTES ---
 
 const LoginModal = ({ isOpen, onClose, onLogin }) => {
+  const [mode, setMode] = useState('login'); // 'login' | 'register'
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (password === ADMIN_PASSWORD) {
-      onLogin('admin');
-      onClose();
-    } else if (password === USER_PASSWORD) {
-      onLogin('user');
-      onClose();
-    } else {
-      setError('Contraseña incorrecta');
+  useEffect(() => {
+    if (!isOpen) {
+      setMode('login');
+      setUsername('');
+      setPassword('');
+      setConfirm('');
+      setFirstName('');
+      setLastName('');
+      setEmail('');
+      setPhone('');
+      setError('');
+      setLoading(false);
     }
-  };
+  }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const validateEmail = (e) => /\S+@\S+\.\S+/.test(e);
+  const validatePhone = (p) => /^\+?\d{7,15}$/.test(p);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      if (mode === 'login') {
+        if (!username.trim() || !password) {
+          setError('Completa usuario y contraseña');
+          setLoading(false);
+          return;
+        }
+        const user = await verifyUser(username.trim(), password);
+        if (!user) {
+          setError('Credenciales inválidas');
+          setLoading(false);
+          return;
+        }
+        onLogin(user);
+        onClose();
+      } else {
+        // register
+        if (!firstName.trim() || !lastName.trim() || !email.trim() || !phone.trim() || !username.trim() || !password) {
+          setError('Completa todos los campos');
+          setLoading(false);
+          return;
+        }
+        if (!validateEmail(email.trim())) {
+          setError('Correo no válido');
+          setLoading(false);
+          return;
+        }
+        if (!validatePhone(phone.trim())) {
+          setError('Teléfono no válido (solo dígitos, puede incluir +, 7-15 caracteres)');
+          setLoading(false);
+          return;
+        }
+        if (password !== confirm) {
+          setError('Las contraseñas no coinciden');
+          setLoading(false);
+          return;
+        }
+        if (username.trim().toLowerCase() === 'admin') {
+          setError('El nombre de usuario "admin" está reservado');
+          setLoading(false);
+          return;
+        }
+        const newUser = await createUser({ username: username.trim(), password, role: 'user', firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(), phone: phone.trim() });
+        onLogin(newUser);
+        onClose();
+      }
+    } catch (err) {
+      setError(err?.message || 'Error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose}></div>
-      <div className="relative bg-white w-full max-w-md rounded-[2.5rem] p-10 shadow-2xl animate-in zoom-in-95 duration-300">
+      <div className="relative bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 duration-300 overflow-auto max-h-[90vh]">
         <button onClick={onClose} className="absolute top-6 right-6 p-2 hover:bg-neutral-100 rounded-full transition-colors">
           <X size={20} />
         </button>
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-neutral-100 rounded-2xl flex items-center justify-center mx-auto mb-6 text-amber-600">
-            <User size={32} />
+        <div className="text-center mb-6">
+          <div className="w-14 h-14 bg-neutral-100 rounded-2xl flex items-center justify-center mx-auto mb-4 text-amber-600">
+            <User size={28} />
           </div>
-          <h2 className="text-3xl font-black uppercase tracking-tighter">Acceso Verzing</h2>
-          <p className="text-sm text-neutral-400 mt-2 font-medium">Ingresa tu clave de acceso</p>
+          <h2 className="text-2xl font-black uppercase tracking-tighter">{mode === 'login' ? 'Acceso' : 'Registro'}</h2>
+          <p className="text-sm text-neutral-400 mt-1 font-medium">{mode === 'login' ? 'Ingresa con tu usuario' : 'Crea una cuenta segura'}</p>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {mode === 'register' && (
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                type="text"
+                value={firstName}
+                onChange={(e) => { setFirstName(e.target.value); setError(''); }}
+                className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
+                placeholder="Nombre"
+              />
+              <input
+                type="text"
+                value={lastName}
+                onChange={(e) => { setLastName(e.target.value); setError(''); }}
+                className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
+                placeholder="Apellido"
+              />
+            </div>
+          )}
+
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => { setUsername(e.target.value); setError(''); }}
+            className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
+            placeholder="Nombre de usuario (único)"
+            autoFocus
+          />
+
+          {mode === 'register' && (
+            <>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => { setEmail(e.target.value); setError(''); }}
+                className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
+                placeholder="Correo electrónico"
+              />
+              <input
+                type="tel"
+                value={phone}
+                onChange={(e) => { setPhone(e.target.value); setError(''); }}
+                className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
+                placeholder="Teléfono (ej +573xx...)"
+              />
+            </>
+          )}
+
           <input
             type="password"
             value={password}
             onChange={(e) => { setPassword(e.target.value); setError(''); }}
-            className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:border-amber-600 transition-all text-center tracking-widest"
-            placeholder="••••••••"
-            autoFocus
+            className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
+            placeholder="Contraseña"
           />
+
+          {mode === 'register' && (
+            <input
+              type="password"
+              value={confirm}
+              onChange={(e) => { setConfirm(e.target.value); setError(''); }}
+              className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
+              placeholder="Confirmar contraseña"
+            />
+          )}
+
           {error && <p className="text-rose-500 text-xs text-center font-bold uppercase">{error}</p>}
-          <button type="submit" className="w-full bg-black text-white py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-amber-600 transition-all">
-            Validar Identidad
+
+          <button type="submit" disabled={loading} className="w-full bg-black text-white py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-amber-600 transition-all">
+            {loading ? 'Procesando...' : (mode === 'login' ? 'Iniciar sesión' : 'Registrarme')}
           </button>
+
+          <div className="text-center text-xs text-neutral-500 mt-2">
+            {mode === 'login' ? (
+              <button type="button" onClick={() => setMode('register')} className="underline">¿No tienes cuenta? Regístrate</button>
+            ) : (
+              <button type="button" onClick={() => setMode('login')} className="underline">¿Ya tienes cuenta? Ingresa</button>
+            )}
+          </div>
         </form>
+        <div className="mt-4 text-[10px] text-neutral-400 text-center">Usuario administrador por defecto: <strong>admin</strong> / <i>admin123</i></div>
       </div>
     </div>
   );
@@ -278,7 +484,7 @@ const AdminPanel = ({ products, setProducts }) => {
   );
 };
 
-const Navbar = ({ wishlistCount, onOpenAssistant, userRole, setRole, onOpenLogin }) => {
+const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogout, onOpenLogin }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
@@ -299,9 +505,9 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, setRole, onOpenLogin
           {userRole ? (
             <div className="flex items-center gap-3">
               <div className="px-4 py-2 bg-neutral-100 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-2">
-                <User size={12} /> {userRole === 'admin' ? '👑 Admin' : 'Comprador'}
+                <User size={12} /> {userRole === 'admin' ? `${currentUser} 👑` : currentUser}
               </div>
-              <button onClick={() => setRole(null)} className="p-2 hover:bg-rose-50 text-rose-500 rounded-full transition-colors">
+              <button onClick={onLogout} className="p-2 hover:bg-rose-50 text-rose-500 rounded-full transition-colors">
                 <LogOut size={18} />
               </button>
             </div>
@@ -583,7 +789,18 @@ const Footer = () => (
 // --- APP PRINCIPAL ---
 
 export default function App() {
-  const [userRole, setUserRole] = useState(() => localStorage.getItem('verzing_role') || null);
+  // Session (username + role) persisted as verzing_session
+  const [currentUser, setCurrentUser] = useState(() => {
+    const s = localStorage.getItem('verzing_session');
+    if (!s) return null;
+    const parsed = JSON.parse(s);
+    return parsed.displayName || parsed.username || null;
+  });
+  const [userRole, setUserRole] = useState(() => {
+    const s = localStorage.getItem('verzing_session');
+    return s ? JSON.parse(s).role : null;
+  });
+
   const [products, setProducts] = useState(() => {
     const saved = localStorage.getItem('verzing_products');
     return saved ? JSON.parse(saved) : DEFAULT_PRODUCTS;
@@ -594,20 +811,40 @@ export default function App() {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isHeaderSticky, setIsHeaderSticky] = useState(false);
 
+  // Seed admin user on first run
+  useEffect(() => { seedAdmin(); }, []);
+
   useEffect(() => {
     localStorage.setItem('verzing_products', JSON.stringify(products));
   }, [products]);
 
+  // Keep session synced
   useEffect(() => {
-    if (userRole) localStorage.setItem('verzing_role', userRole);
-    else localStorage.removeItem('verzing_role');
-  }, [userRole]);
+    if (userRole) {
+      localStorage.setItem('verzing_session', JSON.stringify({ username: currentUser, role: userRole }));
+    } else {
+      localStorage.removeItem('verzing_session');
+    }
+  }, [userRole, currentUser]);
 
   useEffect(() => {
     const handleScroll = () => setIsHeaderSticky(window.scrollY > 300);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  const handleLogin = (user) => {
+    const displayName = (user.firstName || user.lastName) ? `${(user.firstName || '').trim()} ${(user.lastName || '').trim()}`.trim() : user.username;
+    setCurrentUser(displayName);
+    setUserRole(user.role);
+    localStorage.setItem('verzing_session', JSON.stringify({ username: user.username, role: user.role, displayName }));
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setUserRole(null);
+    localStorage.removeItem('verzing_session');
+  }; 
 
   const filteredProducts = useMemo(() => {
     return products.filter(p => activeVibe === 'all' || p.vibe === activeVibe);
@@ -629,7 +866,8 @@ export default function App() {
         wishlistCount={0} 
         onOpenAssistant={() => setIsAssistantOpen(true)} 
         userRole={userRole} 
-        setRole={setUserRole} 
+        currentUser={currentUser}
+        onLogout={handleLogout}
         onOpenLogin={() => setIsLoginOpen(true)}
       />
 
@@ -671,7 +909,7 @@ export default function App() {
 
       {selectedProduct && <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} />}
       <AIAssistant isOpen={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} products={products} />
-      <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} onLogin={setUserRole} />
+      <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} onLogin={(user) => { handleLogin(user); setIsLoginOpen(false); }} />
 
       {!isAssistantOpen && (
         <button onClick={() => setIsAssistantOpen(true)} className="fixed bottom-10 right-10 z-[100] bg-black text-white p-5 rounded-full shadow-2xl hover:bg-amber-600 transition-all hover:scale-110 active:scale-95 group">
