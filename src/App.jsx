@@ -36,6 +36,10 @@ import { Line } from 'react-chartjs-2';
 import { db, firebaseConfigured } from './firebase';
 import { collection, query, orderBy, onSnapshot, addDoc, setDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 
+// Local size-guide assets
+import Tabladetallas from './assets/Tallas/Tabladetallas.jpeg';
+import Comomedir from './assets/Tallas/Comomedir.jpeg';
+
 // Registrar Chart.js
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler);
 
@@ -908,6 +912,8 @@ const Footer = () => (
 const SizeGuide = ({ onBack }) => {
   const [gender, setGender] = useState('men');
   const [selectedSize, setSelectedSize] = useState(40);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState(null);
 
   // Datos de referencia (Talla EU vs Medida en CM)
   const sizeData = {
@@ -922,70 +928,122 @@ const SizeGuide = ({ onBack }) => {
   };
 
   const currentMeasure = sizeData[gender].find(s => s.eu === selectedSize) || sizeData[gender][0];
-
-  // Cálculo de escala visual (ajustado para que 30cm sea el máximo relativo en pantalla)
   const shoeScale = (currentMeasure.cm / 30) * 100;
 
+  // Map cm to a hue-rotate value (-60deg .. +60deg)
+  const sizesArr = sizeData[gender];
+  const minCm = sizesArr[0].cm;
+  const maxCm = sizesArr[sizesArr.length - 1].cm;
+  const hue = ((currentMeasure.cm - minCm) / (maxCm - minCm)) * 120 - 60;
+  const imgFilter = `hue-rotate(${hue}deg) saturate(1.05) contrast(0.98)`;
+
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    const onKey = (e) => { if (e.key === 'Escape') setLightboxOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightboxOpen]);
+
   return (
-    <div className="max-w-4xl mx-auto p-6 bg-white rounded-[2.5rem] border-2 border-neutral-100 animate-in fade-in slide-in-from-bottom-4">
-      <div className="text-center mb-8">
-        <h2 className="text-3xl font-black uppercase tracking-tighter italic">Guía de Tallas Interactiva</h2>
-        <p className="text-neutral-400 text-xs font-bold uppercase tracking-widest mt-2">Encuentra tu ajuste perfecto</p>
-      </div>
-      <div className="flex justify-end mb-6">
-        <button onClick={() => onBack && onBack()} className="text-sm font-black uppercase tracking-widest bg-white border border-neutral-100 px-4 py-2 rounded-2xl hover:bg-amber-50">Volver al Catálogo</button>
+    <div className="max-w-6xl mx-auto p-4 sm:p-10 bg-white rounded-[3rem] border-2 border-neutral-100 shadow-sm animate-in fade-in slide-in-from-bottom-6 duration-700">
+      {/* Header con Botón Volver */}
+      <div className="flex flex-col md:flex-row justify-between items-center mb-12 gap-6">
+        <div className="text-center md:text-left">
+          <h2 className="text-4xl font-black uppercase tracking-tighter italic leading-none">Guía de Tallas</h2>
+          <p className="text-neutral-400 text-[10px] font-bold uppercase tracking-[0.2em] mt-2 flex items-center gap-2">
+            <span className="w-4 h-[1px] bg-amber-600"></span> Ajuste de Precisión Verzing
+          </p>
+        </div>
+        <button 
+          onClick={() => onBack && onBack()} 
+          className="group flex items-center gap-3 px-6 py-3 bg-neutral-50 hover:bg-black hover:text-white rounded-2xl transition-all duration-300 border border-neutral-100"
+        >
+          <span className="text-[10px] font-black uppercase tracking-widest">Cerrar Guía</span>
+          <X size={16} className="group-hover:rotate-90 transition-transform" />
+        </button>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-12 items-center">
-        {/* Visualización del Zapato */}
-        <div className="relative flex flex-col items-center justify-center bg-neutral-50 rounded-[2rem] p-10 h-[400px] border border-neutral-100 overflow-hidden">
-          <div className="absolute top-4 left-4 flex items-center gap-2 text-[10px] font-black uppercase text-amber-600">
-            <Maximize2 size={14} /> Vista de escala relativa
-          </div>
-          
-          <div 
-            className="transition-all duration-500 ease-out flex flex-col items-center"
-            style={{ width: `${shoeScale}%` }}
-          >
-            <img 
-              src="https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=600" 
-              alt="Shoe Reference" 
-              className="w-full drop-shadow-2xl grayscale hover:grayscale-0 transition-all cursor-crosshair"
-            />
-            <div className="w-full h-1 bg-black mt-2 relative">
-              <div className="absolute -left-1 -top-1 w-2 h-3 bg-black"></div>
-              <div className="absolute -right-1 -top-1 w-2 h-3 bg-black"></div>
-              <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-black">{currentMeasure.cm} CM</span>
+      <div className="grid lg:grid-cols-12 gap-12 items-start">
+        {/* COLUMNA IZQUIERDA: Visualización y Fotos (7/12) */}
+        <div className="lg:col-span-7 space-y-6">
+          {/* Contenedor del Zapato a Escala */}
+          <div className="relative flex flex-col items-center justify-center bg-neutral-50 rounded-[2.5rem] p-10 h-[450px] border border-neutral-100 overflow-hidden shadow-inner">
+            <div className="absolute top-6 left-6 flex items-center gap-2 text-[9px] font-black uppercase text-amber-600 bg-white/80 backdrop-blur px-3 py-1.5 rounded-lg shadow-sm">
+              <Maximize2 size={12} /> Escala Real Relativa
             </div>
-           
-
             
+            <div 
+              className="transition-all duration-700 ease-out flex flex-col items-center"
+              style={{ width: `${shoeScale}%`, maxWidth: '90%' }}
+            >
+              <img 
+                src="https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=800" 
+                alt="Escala" 
+                className="w-full drop-shadow-[0_35px_35px_rgba(0,0,0,0.15)] grayscale hover:grayscale-0 transition-all duration-500 cursor-crosshair"
+                style={{ filter: imgFilter, transition: 'filter 0.5s ease' }}
+              />
+              {/* Regla Inferior */}
+              <div className="w-full h-[2px] bg-black mt-6 relative">
+                <div className="absolute -left-0.5 -top-1 w-1 h-3 bg-black"></div>
+                <div className="absolute -right-0.5 -top-1 w-1 h-3 bg-black"></div>
+                <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center">
+                  <span className="text-[11px] font-black tracking-tighter bg-black text-white px-3 py-1 rounded-full">{currentMeasure.cm} CM</span>
+                </div>
+              </div>
+            </div>
           </div>
+
+          {/* GALERÍA DE 2 IMÁGENES: Bien distribuidas (usar assets locales en src/assets/Tallas) */}
+          <div className="grid grid-cols-2 gap-4">
+            {[Tabladetallas, Comomedir].map((src, idx) => (
+              <div key={idx} className="group relative h-56 md:h-64 rounded-[2rem] overflow-hidden border border-neutral-100 shadow-sm cursor-zoom-in flex items-center justify-center bg-neutral-50">
+                <img
+                  src={src}
+                  alt={idx === 0 ? 'Tabla de tallas' : 'Cómo medir'}
+                  className="w-full h-full object-contain p-4 group-hover:scale-105 transition-transform duration-500"
+                  onClick={() => { setLightboxSrc(src); setLightboxOpen(true); }}
+                />
+                <div className="absolute inset-0 bg-black/6 group-hover:bg-transparent transition-colors pointer-events-none"></div>
+              </div>
+            ))}
+          </div>
+
+          {/* Lightbox modal para ampliar imagen */}
+          {lightboxOpen && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/80" onClick={() => setLightboxOpen(false)}></div>
+              <div className="relative max-w-4xl w-full z-50">
+                <button onClick={() => setLightboxOpen(false)} className="absolute top-3 right-3 z-50 p-2 bg-white rounded-full"><X size={20} /></button>
+                <img src={lightboxSrc} alt="Ampliada" className="w-full max-h-[90vh] object-contain rounded-xl" />
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Controles */}
-        <div className="space-y-8">
-          {/* Selector de Género */}
-          <div className="flex bg-neutral-100 p-1 rounded-2xl">
-            <button 
-              onClick={() => { setGender('men'); setSelectedSize(40); }}
-              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${gender === 'men' ? 'bg-black text-white' : 'text-neutral-500'}`}
-            >Hombres</button>
-            <button 
-              onClick={() => { setGender('women'); setSelectedSize(37); }}
-              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${gender === 'women' ? 'bg-black text-white' : 'text-neutral-500'}`}
-            >Mujeres</button>
+        {/* COLUMNA DERECHA: Controles (5/12) */}
+        <div className="lg:col-span-5 space-y-8 bg-neutral-50/50 p-8 rounded-[2.5rem] border border-neutral-100">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400 mb-6 text-center">Selecciona Categoría</p>
+            <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-neutral-100">
+              <button 
+                onClick={() => { setGender('men'); setSelectedSize(40); }}
+                className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${gender === 'men' ? 'bg-black text-white shadow-lg' : 'text-neutral-400 hover:text-black'}`}
+              >Hombres</button>
+              <button 
+                onClick={() => { setGender('women'); setSelectedSize(37); }}
+                className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${gender === 'women' ? 'bg-black text-white shadow-lg' : 'text-neutral-400 hover:text-black'}`}
+              >Mujeres</button>
+            </div>
           </div>
 
-          {/* Selector de Talla */}
           <div>
-            <label className="text-[10px] font-black uppercase tracking-widest mb-4 block text-neutral-400 text-center">Selecciona tu talla (EU)</label>
-            <div className="grid grid-cols-4 gap-2">
+            <label className="text-[10px] font-black uppercase tracking-widest mb-6 block text-neutral-400 text-center">Talla Europea (EU)</label>
+            <div className="grid grid-cols-4 gap-3">
               {sizeData[gender].map((item) => (
                 <button
                   key={item.eu}
                   onClick={() => setSelectedSize(item.eu)}
-                  className={`py-4 rounded-xl text-sm font-black transition-all border-2 ${selectedSize === item.eu ? 'border-amber-600 bg-amber-50 text-amber-600' : 'border-neutral-100 hover:border-neutral-200'}`}
+                  className={`py-5 rounded-2xl text-sm font-black transition-all border-2 ${selectedSize === item.eu ? 'border-amber-600 bg-amber-600 text-white scale-105 shadow-md' : 'border-white bg-white hover:border-neutral-200 shadow-sm'}`}
                 >
                   {item.eu}
                 </button>
@@ -993,15 +1051,23 @@ const SizeGuide = ({ onBack }) => {
             </div>
           </div>
 
-          <div className="bg-amber-600 p-6 rounded-3xl text-white">
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="text-[10px] font-bold uppercase opacity-80">Tu medida recomendada:</p>
-                <p className="text-3xl font-black">{currentMeasure.cm} <span className="text-sm">cm</span></p>
+          <div className="bg-white p-8 rounded-[2rem] border border-neutral-100 shadow-sm relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-amber-50 rounded-bl-full -mr-10 -mt-10 transition-all group-hover:bg-amber-100"></div>
+            <div className="relative z-10">
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-2">Medida Interna</p>
+              <div className="flex items-baseline gap-2">
+                <span className="text-5xl font-black tracking-tighter">{currentMeasure.cm}</span>
+                <span className="text-lg font-bold text-neutral-400 uppercase">cm</span>
               </div>
-              <ShieldCheck size={40} className="opacity-50" />
+              <div className="mt-6 flex items-center gap-3 text-[9px] font-bold uppercase text-neutral-500 bg-neutral-50 p-3 rounded-xl">
+                <ShieldCheck size={14} className="text-amber-600" /> Ajuste Sugerido Verzing
+              </div>
             </div>
           </div>
+          
+          <button className="w-full bg-black text-white py-6 rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] hover:bg-amber-600 transition-all shadow-xl shadow-black/5">
+            Confirmar Disponibilidad
+          </button>
         </div>
       </div>
     </div>
