@@ -578,84 +578,97 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
 const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogout, onOpenLogin, usingFirestore, activeTab, setActiveTab }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const navigateTo = (tab, scrollId = null) => {
+    setActiveTab && setActiveTab(tab);
+    setMobileMenuOpen(false);
+    if (scrollId) {
+      setTimeout(() => {
+        document.getElementById(scrollId)?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    }
+  };
+
   return (
-    <nav className="fixed top-0 w-full z-[100] h-16 md:h-20 bg-[#FDFCFB]/90 backdrop-blur-xl border-b border-black/5">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-full flex justify-between items-center text-left">
-        <div className="text-2xl font-black tracking-tighter cursor-pointer group" onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})}>
-          VERZING<span className="text-amber-600 group-hover:animate-pulse">.</span>
+    <nav className="fixed top-0 w-full z-[150] h-16 md:h-20 bg-[#FDFCFB] border-b border-black/5">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-full flex justify-between items-center relative z-[160] bg-[#FDFCFB]">
+        {/* Logo */}
+        <div 
+          className="text-2xl font-black tracking-tighter cursor-pointer" 
+          onClick={() => navigateTo('shop')}
+        >
+          VERZING<span className="text-amber-600">.</span>
         </div>
         
+        {/* Escritorio (Sin cambios) */}
         <div className="hidden md:flex space-x-10 text-[10px] font-bold uppercase tracking-[0.2em]">
-          <button onClick={() => { setActiveTab && setActiveTab('shop'); setTimeout(() => document.getElementById('catalog')?.scrollIntoView({behavior: 'smooth'}), 50); }} className="hover:text-amber-600 transition-colors">Catálogo</button>
-          <button onClick={onOpenAssistant} className="hover:text-amber-600 transition-colors flex items-center gap-2">
-            ✨ Asistente AI
-          </button>
+          <button onClick={() => navigateTo('shop', 'catalog')} className="hover:text-amber-600">Catálogo</button>
+          <button onClick={onOpenAssistant} className="hover:text-amber-600 flex items-center gap-2">✨ Asistente AI</button>
           <button 
-            onClick={() => setActiveTab && setActiveTab('sizes')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${activeTab === 'sizes' ? 'bg-amber-600 text-white' : 'hover:bg-neutral-100 text-neutral-400'}`}
-            title="Guía de Tallas"
+            onClick={() => setActiveTab('sizes')}
+            className={`px-4 py-2 rounded-xl ${activeTab === 'sizes' ? 'bg-amber-600 text-white' : 'text-neutral-400'}`}
           >
-            <Maximize2 size={16} />
-            <span className="text-[10px] font-black uppercase tracking-widest">Guía de Tallas</span>
+            Guía de Tallas
           </button>
         </div>
 
-        {/* Mobile menu button */}
-        <button onClick={() => setMobileMenuOpen(true)} className="md:hidden p-2 bg-neutral-50 rounded-full shadow-sm">
-          <Menu size={18} />
-        </button> 
-
-        <div className="flex items-center space-x-5">
-          {userRole ? (
-            <div className="flex items-center gap-3">
-              <div className="px-4 py-2 bg-neutral-100 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-2">
-                <User size={12} /> {userRole === 'admin' ? `${currentUser} 👑` : currentUser}
-              </div>
-              <button onClick={onLogout} className="p-2 hover:bg-rose-50 text-rose-500 rounded-full transition-colors">
-                <LogOut size={18} />
-              </button>
-            </div>
-          ) : (
-            <button onClick={onOpenLogin} className="flex items-center gap-2 bg-black text-white px-5 py-2.5 rounded-full text-[9px] font-black uppercase tracking-widest hover:bg-amber-600 transition-all">
-              <LogIn size={14} /> Acceder
-            </button>
-          )}
-          <Heart size={18} className="cursor-pointer hidden sm:block" />
-          {usingFirestore && (
-            <div className="hidden sm:flex items-center text-[10px] bg-amber-50 text-amber-800 px-3 py-1 rounded-full font-bold uppercase tracking-wider">Sincronizado</div>
-          )}
-          <div className="relative cursor-pointer">
+        <div className="flex items-center space-x-4">
+          <div className="relative cursor-pointer p-2">
             <ShoppingCart size={18} />
             {wishlistCount > 0 && (
-              <span className="absolute -top-2 -right-2 bg-amber-600 text-white text-[8px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
-                {wishlistCount}
-              </span>
+              <span className="absolute top-0 right-0 bg-amber-600 text-white text-[8px] rounded-full w-4 h-4 flex items-center justify-center font-bold">{wishlistCount}</span>
+            )}
+          </div>
+
+          {/* Botón Hamburguesa Móvil */}
+          <button 
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)} 
+            className="md:hidden p-2 bg-neutral-100 rounded-xl transition-colors"
+          >
+            {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
+        </div>
+      </div>
+
+      {/* MENÚ MÓVIL: Despliegue de ARRIBA hacia ABAJO */}
+      <div className={`
+        md:hidden fixed inset-x-0 top-0 bg-white z-[155] w-full transition-all duration-500 ease-in-out transform
+        ${mobileMenuOpen ? 'translate-y-16 opacity-100 h-screen' : '-translate-y-full opacity-0 h-0'}
+      `}>
+        <div className="p-8 flex flex-col gap-6 bg-white h-full border-t border-neutral-100">
+          <button 
+            onClick={() => navigateTo('shop', 'catalog')}
+            className={`flex items-center justify-between p-6 rounded-3xl text-sm font-black uppercase tracking-widest ${activeTab === 'shop' ? 'bg-black text-white' : 'bg-neutral-50 text-neutral-800'}`}
+          >
+            Catálogo <TrendingUp size={18} />
+          </button>
+
+          <button 
+            onClick={() => { onOpenAssistant(); setMobileMenuOpen(false); }}
+            className="flex items-center justify-between p-6 rounded-3xl text-sm font-black uppercase tracking-widest bg-neutral-50 text-neutral-800"
+          >
+            Asistente AI <Sparkles size={18} />
+          </button>
+
+          <button 
+            onClick={() => navigateTo('sizes')}
+            className={`flex items-center justify-between p-6 rounded-3xl text-sm font-black uppercase tracking-widest ${activeTab === 'sizes' ? 'bg-amber-600 text-white' : 'bg-neutral-50 text-neutral-800'}`}
+          >
+            Guía de Tallas <Maximize2 size={18} />
+          </button>
+
+          <div className="mt-auto pb-20 space-y-8">
+            <div className="flex justify-center gap-8">
+              <Instagram size={24} className="text-neutral-400" />
+              <MessageCircle size={24} className="text-neutral-400" />
+            </div>
+            {userRole ? (
+              <button onClick={onLogout} className="w-full py-5 rounded-2xl bg-rose-50 text-rose-500 font-black uppercase text-[10px] tracking-widest">Cerrar Sesión</button>
+            ) : (
+              <button onClick={() => { onOpenLogin(); setMobileMenuOpen(false); }} className="w-full py-5 rounded-2xl bg-black text-white font-black uppercase text-[10px] tracking-widest">Iniciar Sesión</button>
             )}
           </div>
         </div>
       </div>
-
-      {/* Mobile slide-over menu */}
-      {mobileMenuOpen && (
-        <div className="md:hidden fixed inset-0 z-50 bg-black/60 flex justify-end">
-          <div className="w-72 bg-white h-full p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div className="text-lg font-black">VERZING</div>
-              <button onClick={() => setMobileMenuOpen(false)} className="p-2 rounded-full hover:bg-neutral-100"><X size={18} /></button>
-            </div>
-            <nav className="flex flex-col gap-4">
-              <button onClick={() => { setMobileMenuOpen(false); setActiveTab && setActiveTab('shop'); setTimeout(() => document.getElementById('catalog')?.scrollIntoView({behavior: 'smooth'}), 50); }} className="uppercase font-bold">Catálogo</button>
-              <button onClick={() => { onOpenAssistant(); setMobileMenuOpen(false);}} className="text-left uppercase font-bold">✨ Asistente AI</button>
-              <button onClick={() => { setMobileMenuOpen(false); setActiveTab && setActiveTab('sizes'); }} className="text-left uppercase font-bold">Guía de Tallas</button>
-              {userRole ? (
-                <button onClick={() => { onLogout(); setMobileMenuOpen(false); }} className="text-left text-rose-500">Cerrar sesión</button>
-              ) : (
-                <button onClick={() => { onOpenLogin(); setMobileMenuOpen(false); }} className="text-left">Acceder</button>
-              )}
-            </nav>
-          </div>
-        </div>
-      )}
     </nav>
   );
 };
