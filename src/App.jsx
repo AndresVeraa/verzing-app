@@ -540,7 +540,7 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
   );
 };
 
-const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogout, onOpenLogin, usingFirestore }) => {
+const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogout, onOpenLogin, usingFirestore, activeTab, setActiveTab }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
@@ -551,9 +551,17 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
         </div>
         
         <div className="hidden md:flex space-x-10 text-[10px] font-bold uppercase tracking-[0.2em]">
-          <a href="#catalog" className="hover:text-amber-600 transition-colors">Catálogo</a>
+          <button onClick={() => { setActiveTab && setActiveTab('shop'); setTimeout(() => document.getElementById('catalog')?.scrollIntoView({behavior: 'smooth'}), 50); }} className="hover:text-amber-600 transition-colors">Catálogo</button>
           <button onClick={onOpenAssistant} className="hover:text-amber-600 transition-colors flex items-center gap-2">
             ✨ Asistente AI
+          </button>
+          <button 
+            onClick={() => setActiveTab && setActiveTab('sizes')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${activeTab === 'sizes' ? 'bg-amber-600 text-white' : 'hover:bg-neutral-100 text-neutral-400'}`}
+            title="Guía de Tallas"
+          >
+            <Maximize2 size={16} />
+            <span className="text-[10px] font-black uppercase tracking-widest">Guía de Tallas</span>
           </button>
         </div>
 
@@ -601,8 +609,9 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
               <button onClick={() => setMobileMenuOpen(false)} className="p-2 rounded-full hover:bg-neutral-100"><X size={18} /></button>
             </div>
             <nav className="flex flex-col gap-4">
-              <a href="#catalog" onClick={() => { setMobileMenuOpen(false); document.getElementById('catalog').scrollIntoView({behavior: 'smooth'}); }} className="uppercase font-bold">Catálogo</a>
+              <button onClick={() => { setMobileMenuOpen(false); setActiveTab && setActiveTab('shop'); setTimeout(() => document.getElementById('catalog')?.scrollIntoView({behavior: 'smooth'}), 50); }} className="uppercase font-bold">Catálogo</button>
               <button onClick={() => { onOpenAssistant(); setMobileMenuOpen(false);}} className="text-left uppercase font-bold">✨ Asistente AI</button>
+              <button onClick={() => { setMobileMenuOpen(false); setActiveTab && setActiveTab('sizes'); }} className="text-left uppercase font-bold">Guía de Tallas</button>
               {userRole ? (
                 <button onClick={() => { onLogout(); setMobileMenuOpen(false); }} className="text-left text-rose-500">Cerrar sesión</button>
               ) : (
@@ -896,6 +905,109 @@ const Footer = () => (
 
 // --- APP PRINCIPAL ---
 
+const SizeGuide = ({ onBack }) => {
+  const [gender, setGender] = useState('men');
+  const [selectedSize, setSelectedSize] = useState(40);
+
+  // Datos de referencia (Talla EU vs Medida en CM)
+  const sizeData = {
+    men: [
+      { eu: 38, cm: 24.5 }, { eu: 39, cm: 25 }, { eu: 40, cm: 25.5 },
+      { eu: 41, cm: 26 }, { eu: 42, cm: 26.5 }, { eu: 43, cm: 27.5 }, { eu: 44, cm: 28 }
+    ],
+    women: [
+      { eu: 35, cm: 22 }, { eu: 36, cm: 22.5 }, { eu: 37, cm: 23.5 },
+      { eu: 38, cm: 24 }, { eu: 39, cm: 25 }, { eu: 40, cm: 25.5 }
+    ]
+  };
+
+  const currentMeasure = sizeData[gender].find(s => s.eu === selectedSize) || sizeData[gender][0];
+
+  // Cálculo de escala visual (ajustado para que 30cm sea el máximo relativo en pantalla)
+  const shoeScale = (currentMeasure.cm / 30) * 100;
+
+  return (
+    <div className="max-w-4xl mx-auto p-6 bg-white rounded-[2.5rem] border-2 border-neutral-100 animate-in fade-in slide-in-from-bottom-4">
+      <div className="text-center mb-8">
+        <h2 className="text-3xl font-black uppercase tracking-tighter italic">Guía de Tallas Interactiva</h2>
+        <p className="text-neutral-400 text-xs font-bold uppercase tracking-widest mt-2">Encuentra tu ajuste perfecto</p>
+      </div>
+      <div className="flex justify-end mb-6">
+        <button onClick={() => onBack && onBack()} className="text-sm font-black uppercase tracking-widest bg-white border border-neutral-100 px-4 py-2 rounded-2xl hover:bg-amber-50">Volver al Catálogo</button>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-12 items-center">
+        {/* Visualización del Zapato */}
+        <div className="relative flex flex-col items-center justify-center bg-neutral-50 rounded-[2rem] p-10 h-[400px] border border-neutral-100 overflow-hidden">
+          <div className="absolute top-4 left-4 flex items-center gap-2 text-[10px] font-black uppercase text-amber-600">
+            <Maximize2 size={14} /> Vista de escala relativa
+          </div>
+          
+          <div 
+            className="transition-all duration-500 ease-out flex flex-col items-center"
+            style={{ width: `${shoeScale}%` }}
+          >
+            <img 
+              src="https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=600" 
+              alt="Shoe Reference" 
+              className="w-full drop-shadow-2xl grayscale hover:grayscale-0 transition-all cursor-crosshair"
+            />
+            <div className="w-full h-1 bg-black mt-2 relative">
+              <div className="absolute -left-1 -top-1 w-2 h-3 bg-black"></div>
+              <div className="absolute -right-1 -top-1 w-2 h-3 bg-black"></div>
+              <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-black">{currentMeasure.cm} CM</span>
+            </div>
+           
+
+            
+          </div>
+        </div>
+
+        {/* Controles */}
+        <div className="space-y-8">
+          {/* Selector de Género */}
+          <div className="flex bg-neutral-100 p-1 rounded-2xl">
+            <button 
+              onClick={() => { setGender('men'); setSelectedSize(40); }}
+              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${gender === 'men' ? 'bg-black text-white' : 'text-neutral-500'}`}
+            >Hombres</button>
+            <button 
+              onClick={() => { setGender('women'); setSelectedSize(37); }}
+              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${gender === 'women' ? 'bg-black text-white' : 'text-neutral-500'}`}
+            >Mujeres</button>
+          </div>
+
+          {/* Selector de Talla */}
+          <div>
+            <label className="text-[10px] font-black uppercase tracking-widest mb-4 block text-neutral-400 text-center">Selecciona tu talla (EU)</label>
+            <div className="grid grid-cols-4 gap-2">
+              {sizeData[gender].map((item) => (
+                <button
+                  key={item.eu}
+                  onClick={() => setSelectedSize(item.eu)}
+                  className={`py-4 rounded-xl text-sm font-black transition-all border-2 ${selectedSize === item.eu ? 'border-amber-600 bg-amber-50 text-amber-600' : 'border-neutral-100 hover:border-neutral-200'}`}
+                >
+                  {item.eu}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-amber-600 p-6 rounded-3xl text-white">
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="text-[10px] font-bold uppercase opacity-80">Tu medida recomendada:</p>
+                <p className="text-3xl font-black">{currentMeasure.cm} <span className="text-sm">cm</span></p>
+              </div>
+              <ShieldCheck size={40} className="opacity-50" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
   // Session (username + role) persisted as verzing_session
   const [currentUser, setCurrentUser] = useState(() => {
@@ -920,6 +1032,7 @@ export default function App() {
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isHeaderSticky, setIsHeaderSticky] = useState(false);
+  const [activeTab, setActiveTab] = useState('shop');
 
   // Seed admin user on first run
   useEffect(() => { seedAdmin(); }, []);
@@ -1154,41 +1267,55 @@ export default function App() {
         onLogout={handleLogout}
         onOpenLogin={() => setIsLoginOpen(true)}
         usingFirestore={usingFirestore}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
       />
 
-      <Hero onOpenAssistant={() => setIsAssistantOpen(true)} userRole={userRole} />
+      {activeTab === 'shop' && (
+        <>
+          <Hero onOpenAssistant={() => setIsAssistantOpen(true)} userRole={userRole} />
 
-      {userRole === 'admin' && (
-        <AdminPanel products={products} setProducts={setProducts} onNotify={(msg) => handleNotify(msg)} createProduct={createProduct} updateProduct={updateProduct} deleteProduct={deleteProduct} usingFirestore={usingFirestore} migrateProductsToFirestore={migrateProductsToFirestore} />
+          {userRole === 'admin' && (
+            <AdminPanel products={products} setProducts={setProducts} onNotify={(msg) => handleNotify(msg)} createProduct={createProduct} updateProduct={updateProduct} deleteProduct={deleteProduct} usingFirestore={usingFirestore} migrateProductsToFirestore={migrateProductsToFirestore} />
+          )}
+
+          {/* Catálogo Section */}
+          <section id="catalog" className="py-20 px-6">
+            <div className="max-w-7xl mx-auto text-left">
+              <div className={`sticky top-20 z-40 bg-[#FDFCFB]/95 backdrop-blur-md py-10 border-b border-black/5 flex flex-col md:flex-row justify-between items-start md:items-end gap-10 mb-20 transition-all duration-300 ${isHeaderSticky ? 'shadow-sm px-6 -mx-6 rounded-b-3xl' : ''}`}>
+                <div>
+                  <h2 className="text-4xl sm:text-6xl font-black tracking-tighter mb-4 uppercase leading-none italic">The Drop</h2>
+                  <p className="text-gray-400 font-medium text-sm">Mostrando {filteredProducts.length} modelos exclusivos.</p>
+                </div>
+                <div className="flex gap-2 w-full md:w-auto no-scrollbar overflow-x-auto pb-2">
+                  {categories.map((vibe) => (
+                    <button 
+                      key={vibe} 
+                      onClick={() => setActiveVibe(vibe)} 
+                      className={`flex-shrink-0 px-8 py-3.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all border-2 ${activeVibe === vibe ? 'bg-black text-white border-black shadow-lg scale-105' : 'border-neutral-100 hover:border-black bg-white/50'}`}
+                    >
+                      {vibe === 'all' ? 'Todos' : vibe}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-12">
+                {filteredProducts.map((p) => (
+                  <ProductCard key={p.id} product={p} onClick={setSelectedProduct} />
+                ))}
+              </div> 
+            </div>
+          </section>
+        </>
       )}
 
-      {/* Catálogo Section */}
-      <section id="catalog" className="py-20 px-6">
-        <div className="max-w-7xl mx-auto text-left">
-          <div className={`sticky top-20 z-40 bg-[#FDFCFB]/95 backdrop-blur-md py-10 border-b border-black/5 flex flex-col md:flex-row justify-between items-start md:items-end gap-10 mb-20 transition-all duration-300 ${isHeaderSticky ? 'shadow-sm px-6 -mx-6 rounded-b-3xl' : ''}`}>
-            <div>
-              <h2 className="text-4xl sm:text-6xl font-black tracking-tighter mb-4 uppercase leading-none italic">The Drop</h2>
-              <p className="text-gray-400 font-medium text-sm">Mostrando {filteredProducts.length} modelos exclusivos.</p>
-            </div>
-            <div className="flex gap-2 w-full md:w-auto no-scrollbar overflow-x-auto pb-2">
-              {categories.map((vibe) => (
-                <button 
-                  key={vibe} 
-                  onClick={() => setActiveVibe(vibe)} 
-                  className={`flex-shrink-0 px-8 py-3.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all border-2 ${activeVibe === vibe ? 'bg-black text-white border-black shadow-lg scale-105' : 'border-neutral-100 hover:border-black bg-white/50'}`}
-                >
-                  {vibe === 'all' ? 'Todos' : vibe}
-                </button>
-              ))}
-            </div>
+      {activeTab === 'sizes' && (
+        <section className="py-20 px-6">
+          <div className="max-w-7xl mx-auto text-left">
+            <SizeGuide onBack={() => setActiveTab('shop')} />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-12">
-            {filteredProducts.map((p) => (
-              <ProductCard key={p.id} product={p} onClick={setSelectedProduct} />
-            ))}
-          </div> 
-        </div>
-      </section>
+        </section>
+      )}
 
       <Footer />
 
