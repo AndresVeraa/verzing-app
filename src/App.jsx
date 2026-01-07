@@ -33,6 +33,8 @@ import {
   Filler,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
+import { db, firebaseConfigured } from './firebase';
+import { collection, query, orderBy, onSnapshot, addDoc, setDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 
 // Registrar Chart.js
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler);
@@ -42,13 +44,6 @@ const apiKey = ""; // La clave se proporciona en el entorno de ejecución
 const ADMIN_PASSWORD = "admin123";
 const USER_PASSWORD = "user123";
 
-// --- DATOS INICIALES ---
-const DEFAULT_PRODUCTS = [
-  { id: 1, name: "AJ1 High 'Chicago'", price: 195000, vibe: "Retro", sizes: [38, 40, 41, 42, 43], popularity: [10, 45, 30, 80, 75, 95], image: "https://images.unsplash.com/photo-1556906781-9a412961d28c?auto=format&fit=crop&q=80&w=600" },
-  { id: 2, name: "Yeezy Boost 350 V2", price: 175000, vibe: "Streetwear", sizes: [36, 37, 38, 39, 40], popularity: [40, 30, 50, 60, 55, 65], image: "https://images.unsplash.com/photo-1603808033192-082d6919d3e1?auto=format&fit=crop&q=80&w=600" },
-  { id: 3, name: "Dunk Low 'Panda'", price: 155000, vibe: "Streetwear", sizes: [38, 39, 40, 41, 42], popularity: [80, 85, 90, 95, 98, 92], image: "https://images.unsplash.com/photo-1628149455678-16f37bc392f4?auto=format&fit=crop&q=80&w=600" },
-  { id: 4, name: "Travis Scott x AJ1 Low", price: 225000, vibe: "Limited", sizes: [40, 41, 42], popularity: [20, 35, 60, 85, 100, 98], image: "https://images.unsplash.com/photo-1584735175315-9d5816e3188d?auto=format&fit=crop&q=80&w=600" }
-];
 
 // --- FUNCIÓN API GEMINI ---
 async function callGemini(prompt, systemInstruction = "") {
@@ -331,7 +326,7 @@ const LoginModal = ({ isOpen, onClose, onLogin }) => {
   );
 };
 
-const AdminPanel = ({ products, setProducts, onNotify }) => {
+const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProduct, deleteProduct, usingFirestore, migrateProductsToFirestore }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
     const [formData, setFormData] = useState({ name: '', price: '', vibe: 'Streetwear', sizes: '', imagesDataUrls: [] });
@@ -359,14 +354,13 @@ const AdminPanel = ({ products, setProducts, onNotify }) => {
       setFormData(prev => ({ ...prev, imagesDataUrls: prev.imagesDataUrls.filter((_, i) => i !== index) }));
     };
 
-    const handleSave = (e) => {
+    const handleSave = async (e) => {
       e.preventDefault();
       const imgField = (formData.imagesDataUrls && formData.imagesDataUrls.length > 0)
         ? (formData.imagesDataUrls.length === 1 ? formData.imagesDataUrls[0] : formData.imagesDataUrls)
         : "https://images.unsplash.com/photo-1556906781-9a412961d28c?auto=format&fit=crop&q=80&w=600";
 
-      const newProduct = {
-        id: editingId || Date.now(),
+      const productPayload = {
         name: formData.name,
         price: parseInt(formData.price),
         vibe: formData.vibe,
@@ -375,19 +369,21 @@ const AdminPanel = ({ products, setProducts, onNotify }) => {
         popularity: Array.from({length: 6}, () => Math.floor(Math.random() * 100))
       };
 
-      let updated = null;
-      if (editingId) {
-        updated = products.map(p => p.id === editingId ? newProduct : p);
-        setProducts(updated);
-        onNotify && onNotify({ action: 'update', product: newProduct, products: updated, message: 'Producto actualizado' });
-      } else {
-        updated = [...products, newProduct];
-        setProducts(updated);
-        onNotify && onNotify({ action: 'create', product: newProduct, products: updated, message: 'Producto creado' });
+      try {
+        if (editingId) {
+          await updateProduct(editingId, productPayload);
+          onNotify && onNotify({ action: 'update', product: { ...productPayload, id: editingId }, message: 'Producto actualizado' });
+        } else {
+          const created = await createProduct(productPayload);
+          onNotify && onNotify({ action: 'create', product: created, message: 'Producto creado' });
+        }
+      } catch (err) {
+        onNotify && onNotify('Error al guardar producto');
+      } finally {
+        setIsAdding(false);
+        setEditingId(null);
+        setFormData({ name: '', price: '', vibe: 'Streetwear', sizes: '', imagesDataUrls: [] });
       }
-      setIsAdding(false);
-      setEditingId(null);
-      setFormData({ name: '', price: '', vibe: 'Streetwear', sizes: '', imagesDataUrls: [] });
     };   
 
   const handleEdit = (p) => {
@@ -397,11 +393,14 @@ const AdminPanel = ({ products, setProducts, onNotify }) => {
     setIsAdding(true);
   };  
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (confirm('¿Eliminar este producto permanentemente?')) {
-      const updated = products.filter(p => p.id !== id);
-      setProducts(updated);
-      onNotify && onNotify({ action: 'delete', id, products: updated, message: 'Producto eliminado' });
+      try {
+        await deleteProduct(id);
+        onNotify && onNotify({ action: 'delete', id, message: 'Producto eliminado' });
+      } catch (err) {
+        onNotify && onNotify('Error al eliminar producto');
+      }
     }
   }; 
 
@@ -413,6 +412,7 @@ const AdminPanel = ({ products, setProducts, onNotify }) => {
             <h2 className="text-3xl font-black uppercase tracking-tighter">Inventario Verzing</h2>
             <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest mt-1">Gestión de Catálogo Triple A</p>
           </div>
+          <div className="flex items-center gap-3">
           <button 
             onClick={() => {
               if (isAdding) {
@@ -428,6 +428,27 @@ const AdminPanel = ({ products, setProducts, onNotify }) => {
             {isAdding ? <X size={16} /> : <Plus size={16} />}
             {isAdding ? 'Cancelar' : 'Nuevo Modelo'}
           </button>
+
+          {usingFirestore && (
+            <button
+              onClick={async () => {
+                if (!confirm('Subir todos los productos locales a Firestore? Esto puede sobrescribir documentos existentes con el mismo id.')) return;
+                try {
+                  setIsAdding(false);
+                  // show a quick notification
+                  onNotify && onNotify('Iniciando sincronización con Firestore...');
+                  const res = await migrateProductsToFirestore(products);
+                  onNotify && onNotify(`Sincronización completa. Migrados: ${res.success}, errores: ${res.fail}`);
+                } catch (err) {
+                  onNotify && onNotify(err?.message || 'Error al sincronizar');
+                }
+              }}
+              className="bg-white text-amber-600 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-amber-600 hover:bg-amber-50 transition-all"
+            >
+              Sincronizar catálogo
+            </button>
+          )}
+        </div>
         </div>
 
         {isAdding && (
@@ -519,7 +540,7 @@ const AdminPanel = ({ products, setProducts, onNotify }) => {
   );
 };
 
-const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogout, onOpenLogin }) => {
+const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogout, onOpenLogin, usingFirestore }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
@@ -557,6 +578,9 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
             </button>
           )}
           <Heart size={18} className="cursor-pointer hidden sm:block" />
+          {usingFirestore && (
+            <div className="hidden sm:flex items-center text-[10px] bg-amber-50 text-amber-800 px-3 py-1 rounded-full font-bold uppercase tracking-wider">Sincronizado</div>
+          )}
           <div className="relative cursor-pointer">
             <ShoppingCart size={18} />
             {wishlistCount > 0 && (
@@ -926,9 +950,26 @@ export default function App() {
     }
   }, []);
 
+  // Firestore usage detection (env vars OR firebase config present)
+  const [usingFirestore] = useState(Boolean((import.meta.env.VITE_FIREBASE_PROJECT_ID && import.meta.env.VITE_FIREBASE_API_KEY) || firebaseConfigured));
+
+  // If Firestore is enabled, subscribe to the productos collection in real time
   useEffect(() => {
-    localStorage.setItem('verzing_products', JSON.stringify(products));
-  }, [products]);
+    if (!usingFirestore) return;
+    const q = query(collection(db, 'productos'), orderBy('createdAt', 'desc'));
+    const unsub = onSnapshot(q, (snap) => {
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setProducts(docs.length ? docs : DEFAULT_PRODUCTS);
+    }, (err) => {
+      // eslint-disable-next-line no-console
+      console.error('Firestore onSnapshot error', err);
+    });
+    return () => unsub();
+  }, [usingFirestore]);
+
+  useEffect(() => {
+    if (!usingFirestore) localStorage.setItem('verzing_products', JSON.stringify(products));
+  }, [products, usingFirestore]);
 
   // Keep session synced
   useEffect(() => {
@@ -995,6 +1036,73 @@ export default function App() {
     }
   };
 
+  // Firestore CRUD helpers (fallback to localStorage when not configured)
+  const createProduct = async (product) => {
+    if (!usingFirestore) {
+      const newProduct = { ...product, id: Date.now() };
+      const updated = [...products, newProduct];
+      setProducts(updated);
+      handleNotify({ action: 'create', product: newProduct, products: updated, message: 'Producto creado' });
+      return newProduct;
+    }
+    const col = collection(db, 'productos');
+    const docRef = await addDoc(col, { ...product, createdAt: serverTimestamp() });
+    return { id: docRef.id, ...product };
+  };
+
+  const updateProduct = async (id, product) => {
+    if (!usingFirestore) {
+      const updated = products.map(p => p.id === id ? { ...product, id } : p);
+      setProducts(updated);
+      handleNotify({ action: 'update', product: { ...product, id }, products: updated, message: 'Producto actualizado' });
+      return;
+    }
+    await setDoc(doc(db, 'productos', String(id)), { ...product, updatedAt: serverTimestamp() }, { merge: true });
+  };
+
+  const deleteProduct = async (id) => {
+    if (!usingFirestore) {
+      const updated = products.filter(p => p.id !== id);
+      setProducts(updated);
+      handleNotify({ action: 'delete', id, products: updated, message: 'Producto eliminado' });
+      return;
+    }
+    await deleteDoc(doc(db, 'productos', String(id)));
+  };
+
+  // Migrate current local products to Firestore (overwrites by id)
+  const migrateProductsToFirestore = async (items) => {
+    if (!usingFirestore) throw new Error('Firestore no está habilitado');
+    if (!Array.isArray(items) || items.length === 0) throw new Error('No hay productos para migrar');
+
+    // Quick size check for data URLs (warn if any are large)
+    const oversized = items.filter(p => {
+      const img = p.image;
+      return typeof img === 'string' && img.startsWith('data:') && img.length > 500000; // ~500KB
+    });
+    if (oversized.length) {
+      throw new Error(`Hay ${oversized.length} imagenes en formato DataURL muy grandes. Sube las imágenes a Storage o reduce su tamaño antes de migrar.`);
+    }
+
+    let success = 0;
+    let fail = 0;
+    for (const p of items) {
+      try {
+        const docId = String(p.id || Date.now());
+        await setDoc(doc(db, 'productos', docId), { ...p, createdAt: serverTimestamp() });
+        success++;
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('migrate error', err);
+        fail++;
+      }
+    }
+
+    // Notify and return summary
+    handleNotify({ action: 'migrate', products: items, message: `Migrados: ${success}, errores: ${fail}` });
+    return { success, fail };
+  };
+
 
   // Keep selected product in sync when products change (reflect edits or delete)
   useEffect(() => {
@@ -1045,12 +1153,13 @@ export default function App() {
         currentUser={currentUser}
         onLogout={handleLogout}
         onOpenLogin={() => setIsLoginOpen(true)}
+        usingFirestore={usingFirestore}
       />
 
       <Hero onOpenAssistant={() => setIsAssistantOpen(true)} userRole={userRole} />
 
       {userRole === 'admin' && (
-        <AdminPanel products={products} setProducts={setProducts} onNotify={(msg) => handleNotify(msg)} />
+        <AdminPanel products={products} setProducts={setProducts} onNotify={(msg) => handleNotify(msg)} createProduct={createProduct} updateProduct={updateProduct} deleteProduct={deleteProduct} usingFirestore={usingFirestore} migrateProductsToFirestore={migrateProductsToFirestore} />
       )}
 
       {/* Catálogo Section */}
