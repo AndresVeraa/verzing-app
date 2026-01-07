@@ -40,6 +40,37 @@ import { collection, query, orderBy, onSnapshot, addDoc, setDoc, deleteDoc, doc,
 import Tabladetallas from './assets/Tallas/Tabladetallas.jpeg';
 import Comomedir from './assets/Tallas/Comomedir.jpeg';
 
+// --- DATOS INICIALES ---
+const DEFAULT_PRODUCTS = [
+  {
+    id: 1,
+    name: "Air Jordan 1 Retro",
+    price: 850000,
+    vibe: "Retro",
+    image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=800",
+    sizes: [38, 39, 40, 41, 42],
+    popularity: [40, 50, 60, 45, 70, 90]
+  },
+  {
+    id: 2,
+    name: "Nike Dunk Low",
+    price: 620000,
+    vibe: "Streetwear",
+    image: "https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?q=80&w=800",
+    sizes: [37, 38, 39, 40],
+    popularity: [30, 40, 35, 60, 80, 85]
+  },
+  {
+    id: 3,
+    name: "Yeezy Boost 350",
+    price: 1200000,
+    vibe: "Limited",
+    image: "https://images.unsplash.com/photo-1512374382149-433a4279743a?q=80&w=800",
+    sizes: [40, 41, 42, 43, 44],
+    popularity: [80, 85, 90, 95, 98, 100]
+  }
+];
+
 // Registrar Chart.js
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler);
 
