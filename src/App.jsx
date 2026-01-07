@@ -619,6 +619,18 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
             )}
           </div>
 
+          {/* Desktop login/logout */}
+          {userRole ? (
+            <div className="hidden md:flex items-center gap-3">
+              <span className="text-sm font-bold text-neutral-600">{currentUser?.firstName || currentUser?.username}</span>
+              <button onClick={onLogout} className="hidden md:inline-flex bg-rose-50 text-rose-500 px-4 py-2 rounded-2xl font-black uppercase text-[10px] tracking-widest">Cerrar Sesión</button>
+            </div>
+          ) : (
+            <button onClick={onOpenLogin} className="hidden md:inline-flex bg-black text-white px-4 py-2 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2">
+              <LogIn size={14} /> Iniciar Sesión
+            </button>
+          )}
+
           {/* Botón Hamburguesa Móvil */}
           <button 
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)} 
@@ -906,9 +918,9 @@ const Footer = () => (
           <div className="text-4xl font-black tracking-tighter italic">VERZING<span className="text-amber-600">.</span></div>
           <p className="text-zinc-400 max-w-sm text-sm leading-relaxed font-medium">Nacidos en el asfalto, curados para la autenticidad. No vendemos solo calzado, entregamos la confianza para caminar tu propia verdad.</p>
           <div className="flex space-x-6">
-            <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-white hover:text-black transition-all cursor-pointer"><Instagram size={16} /></div>
+            <a href="https://www.instagram.com/verzing.co/" target="_blank" rel="noopener noreferrer" aria-label="Instagram" className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-white hover:text-black transition-all cursor-pointer"><Instagram size={16} /></a>
             <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-white hover:text-black transition-all cursor-pointer text-[10px] font-bold">TK</div>
-            <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-white hover:text-black transition-all cursor-pointer"><MessageCircle size={16} /></div>
+            <a href="https://wa.me/3004371955" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp" className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-white hover:text-black transition-all cursor-pointer"><MessageCircle size={16} /></a>
           </div>
         </div>
         <div className="bg-zinc-900/50 p-10 rounded-[2.5rem] border border-white/5 text-left">
