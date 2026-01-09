@@ -364,7 +364,7 @@ const LoginModal = ({ isOpen, onClose, onLogin }) => {
 const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProduct, deleteProduct, usingFirestore, migrateProductsToFirestore }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
-    const [formData, setFormData] = useState({ name: '', price: '', vibe: 'Streetwear', sizes: '', imagesDataUrls: [] });
+    const [formData, setFormData] = useState({ name: '', price: '', vibe: 'Streetwear', sizes: '', gender: 'Dama', imagesDataUrls: [] });
 
     // Maneja la carga de múltiples archivos y los convierte a Data URLs para persistir en localStorage
     const handleFileChange = async (e) => {
@@ -399,6 +399,7 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
         name: formData.name,
         price: parseInt(formData.price),
         vibe: formData.vibe,
+        gender: formData.gender,
         image: imgField,
         sizes: formData.sizes.split(',').map(s => parseInt(s.trim())),
         popularity: Array.from({length: 6}, () => Math.floor(Math.random() * 100))
@@ -417,13 +418,13 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
       } finally {
         setIsAdding(false);
         setEditingId(null);
-        setFormData({ name: '', price: '', vibe: 'Streetwear', sizes: '', imagesDataUrls: [] });
+        setFormData({ name: '', price: '', vibe: 'Streetwear', sizes: '', gender: 'Dama', imagesDataUrls: [] });
       }
     };   
 
   const handleEdit = (p) => {
     const imgs = Array.isArray(p.image) ? p.image : (p.image ? [p.image] : []);
-    setFormData({ name: p.name, price: p.price, vibe: p.vibe, sizes: p.sizes.join(', '), imagesDataUrls: imgs });
+    setFormData({ name: p.name, price: p.price, vibe: p.vibe, sizes: p.sizes.join(', '), gender: p.gender || 'Dama', imagesDataUrls: imgs });
     setEditingId(p.id);
     setIsAdding(true);
   };  
@@ -453,7 +454,7 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
               if (isAdding) {
                 setIsAdding(false);
                 setEditingId(null);
-                setFormData({ name: '', price: '', vibe: 'Streetwear', sizes: '', imagesDataUrls: [] });
+                setFormData({ name: '', price: '', vibe: 'Streetwear', sizes: '', gender: 'Dama', imagesDataUrls: [] });
               } else {
                 setIsAdding(true);
               }
@@ -507,6 +508,14 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
                 <option value="Streetwear">Streetwear</option>
                 <option value="Retro">Retro</option>
                 <option value="Limited">Limited</option>
+              </select>
+              <select 
+                className="w-full bg-white px-6 py-4 rounded-xl border border-neutral-200 outline-none"
+                value={formData.gender} onChange={e => setFormData({...formData, gender: e.target.value})} required
+              >
+                <option value="Dama">Dama</option>
+                <option value="Hombre">Hombre</option>
+                <option value="unisex">Unisex</option>
               </select>
             </div>
             <div className="space-y-4">
