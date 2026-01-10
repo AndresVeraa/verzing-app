@@ -79,6 +79,8 @@ const apiKey = ""; // La clave se proporciona en el entorno de ejecución
 const ADMIN_PASSWORD = "admin123";
 const USER_PASSWORD = "user123";
 
+// Número de WhatsApp para consultas (código de país + número, sin '+', ej: '573004371955')
+const WHATSAPP_NUMBER = '573004371955';
 
 // --- FUNCIÓN API GEMINI ---
 async function callGemini(prompt, systemInstruction = "") {
@@ -366,19 +368,40 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
   const [editingId, setEditingId] = useState(null);
     const [formData, setFormData] = useState({ name: '', price: '', vibe: 'Streetwear', sizes: '', gender: 'Dama', imagesDataUrls: [] });
 
-    // Maneja la carga de múltiples archivos y los convierte a Data URLs para persistir en localStorage
+    // Maneja la carga de múltiples archivos y los convierte a Data URLs en formato JPEG para persistir en localStorage
     const handleFileChange = async (e) => {
       const files = Array.from(e.target.files || []);
       if (!files.length) return;
-      // Read all files as Data URLs
-      const readFile = (file) => new Promise((resolve, reject) => {
+
+      const fileToJpegDataUrl = (file, quality = 0.9) => new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
         reader.onerror = reject;
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.width;
+              canvas.height = img.height;
+              const ctx = canvas.getContext('2d');
+              // Rellenar fondo blanco para preservar fondo en imágenes transparentes
+              ctx.fillStyle = '#fff';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              ctx.drawImage(img, 0, 0);
+              const jpeg = canvas.toDataURL('image/jpeg', quality);
+              resolve(jpeg);
+            } catch (err) {
+              reject(err);
+            }
+          };
+          img.onerror = reject;
+          img.src = reader.result;
+        };
         reader.readAsDataURL(file);
       });
+
       try {
-        const urls = await Promise.all(files.map(f => readFile(f)));
+        const urls = await Promise.all(files.map(f => fileToJpegDataUrl(f)));
         setFormData(prev => ({ ...prev, imagesDataUrls: [...(prev.imagesDataUrls || []), ...urls] }));
       } catch (err) {
         // ignore failures for now
@@ -788,6 +811,17 @@ const ProductModal = ({ product, onClose }) => {
     setLoadingAI(false);
   };
 
+  const handleWhatsAppChat = () => {
+    if (!selectedSize) { alert('Por favor, selecciona una talla primero.'); return; }
+    const phone = (WHATSAPP_NUMBER || '').toString().replace(/\D/g, '');
+    if (!phone) { alert('Número de WhatsApp no configurado'); return; }
+    const message = `Hola Verzing! 👋\n\nEstoy interesado en estos sneakers:\n*Modelo:* ${product.name}\n*Talla:* ${selectedSize}\n\n¿Están disponibles?`;
+    const encodedMessage = encodeURIComponent(message);
+    const whatsappUrl = `https://wa.me/${phone}?text=${encodedMessage}`;
+    const w = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+    if (!w) window.location.href = whatsappUrl;
+  };
+
   const chartData = {
     labels: ['W1', 'W2', 'W3', 'W4', 'W5', 'Ahora'],
     datasets: [{
@@ -853,7 +887,17 @@ const ProductModal = ({ product, onClose }) => {
               ))}
             </div>
           </div>
-          <button className="w-full bg-black text-white py-6 rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] hover:bg-amber-600 transition-all">Consultar por WhatsApp</button>
+          <button 
+            onClick={handleWhatsAppChat}
+            disabled={!selectedSize}
+            className={`w-full py-6 rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] transition-all ${
+              selectedSize 
+              ? 'bg-black text-white hover:bg-amber-600 shadow-xl' 
+              : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+            }`}
+          >
+            {selectedSize ? 'Consultar por WhatsApp' : 'Selecciona una talla'}
+          </button>
         </div>
       </div>
     </div>
