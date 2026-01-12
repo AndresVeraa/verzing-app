@@ -34,7 +34,7 @@ import {
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import { db, firebaseConfigured } from './firebase';
-import { collection, query, orderBy, onSnapshot, addDoc, setDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, addDoc, setDoc, deleteDoc, doc, serverTimestamp, getDoc } from 'firebase/firestore';
 
 // Local size-guide assets
 import Tabladetallas from './assets/Tallas/Tabladetallas.jpeg';
@@ -45,6 +45,8 @@ const DEFAULT_PRODUCTS = [
   {
     id: 1,
     name: "Air Jordan 1 Retro",
+    brand: "Jordan",
+    gender: "Hombre",
     price: 850000,
     vibe: "Retro",
     image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=800",
@@ -54,6 +56,8 @@ const DEFAULT_PRODUCTS = [
   {
     id: 2,
     name: "Nike Dunk Low",
+    brand: "Nike",
+    gender: "Dama",
     price: 620000,
     vibe: "Streetwear",
     image: "https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?q=80&w=800",
@@ -63,6 +67,8 @@ const DEFAULT_PRODUCTS = [
   {
     id: 3,
     name: "Yeezy Boost 350",
+    brand: "Adidas",
+    gender: "Unisex",
     price: 1200000,
     vibe: "Limited",
     image: "https://images.unsplash.com/photo-1512374382149-433a4279743a?q=80&w=800",
@@ -72,6 +78,8 @@ const DEFAULT_PRODUCTS = [
   {
     id: 4,
     name: "Nike Air Max Uptempo",
+    brand: "Nike",
+    gender: "Hombre",
     price: 650000,
     promoPrice: 480000,
     promoUntil: "2026-01-20T23:59:59",
@@ -93,6 +101,11 @@ const USER_PASSWORD = "user123";
 
 // Número de WhatsApp para consultas (código de país + número, sin '+', ej: '573004371955')
 const WHATSAPP_NUMBER = '573004371955';
+
+const BRANDS = ['Todas', 'Nike', 'Adidas', 'Jordan', 'New Balance', 'On Cloud', 'Asics', 'Puma', 'Reebok', 'Vans', 'Converse', 'Under Armour', 'Skechers', 'Louis Vuitton', 'Dolce & Gabbana'];
+const STYLES = ['Todos', 'Streetwear', 'Retro', 'Limited', 'Deportivo', 'Casual', 'Para Salir'];
+const GENDERS = ['Todos', 'Hombre', 'Dama', 'Unisex', 'Niños'];
+const EURO_SIZES = ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45'];
 
 // --- FUNCIÓN API GEMINI ---
 async function callGemini(prompt, systemInstruction = "") {
@@ -378,7 +391,7 @@ const LoginModal = ({ isOpen, onClose, onLogin }) => {
 const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProduct, deleteProduct, usingFirestore, migrateProductsToFirestore }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
-    const [formData, setFormData] = useState({ name: '', price: '', vibe: 'Streetwear', sizes: '', gender: 'Dama', imagesDataUrls: [], isPromo: false, promoPrice: '', promoUntil: '' });
+    const [formData, setFormData] = useState({ name: '', price: '', vibe: 'Streetwear', sizes: [], gender: 'Unisex', brand: 'Nike', imagesDataUrls: [], isPromo: false, promoPrice: '', promoUntil: '' });
 
     // Maneja la carga de múltiples archivos y los convierte a Data URLs en formato JPEG para persistir en localStorage
     const handleFileChange = async (e) => {
@@ -424,50 +437,85 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
       setFormData(prev => ({ ...prev, imagesDataUrls: prev.imagesDataUrls.filter((_, i) => i !== index) }));
     };
 
-    const handleSave = async (e) => {
-      e.preventDefault();
-      const imgField = (formData.imagesDataUrls && formData.imagesDataUrls.length > 0)
-        ? (formData.imagesDataUrls.length === 1 ? formData.imagesDataUrls[0] : formData.imagesDataUrls)
-        : "https://images.unsplash.com/photo-1556906781-9a412961d28c?auto=format&fit=crop&q=80&w=600";
+    const toggleSize = (size) => {
+      setFormData(prev => ({
+        ...prev,
+        sizes: prev.sizes.includes(size) ? prev.sizes.filter(s => s !== size) : [...prev.sizes, size]
+      }));
+    };
 
-      const productPayload = {
-        name: formData.name,
-        price: parseInt(formData.price),
-        vibe: formData.vibe,
-        gender: formData.gender,
-        image: imgField,
-        sizes: formData.sizes.split(',').map(s => parseInt(s.trim())),
-        popularity: Array.from({length: 6}, () => Math.floor(Math.random() * 100)),
-        isPromo: !!formData.isPromo,
-        promoPrice: formData.isPromo ? parseInt(formData.promoPrice || 0) : undefined,
-        promoUntil: formData.isPromo ? formData.promoUntil : undefined
-      }; 
+    const handleSave = async (e) => {
+      if (e) e.preventDefault();
+
+      // 1. Validación de campos críticos
+      if (!formData.name || !formData.price || !Array.isArray(formData.imagesDataUrls) || formData.imagesDataUrls.length === 0) {
+        alert("⚠️ Completa los campos obligatorios y sube al menos una imagen.");
+        return;
+      }
+
+      // 2. Crear un OBJETO ÚNICO (Evita usar productPayload y productToSave a la vez)
+      const finalProduct = {
+        name: formData.name.trim(),
+        brand: formData.brand || 'Nike',
+        price: parseFloat(formData.price),
+        vibe: formData.vibe || 'Streetwear',
+        gender: formData.gender || 'Unisex',
+        sizes: Array.isArray(formData.sizes) ? formData.sizes : [],
+        image: formData.imagesDataUrls,
+        isPromo: Boolean(formData.isPromo),
+        promoPrice: formData.isPromo ? parseFloat(formData.promoPrice) : null,
+        promoUntil: formData.isPromo ? formData.promoUntil : null,
+        updatedAt: new Date().toISOString()
+      };
 
       try {
         if (editingId) {
-          await updateProduct(editingId, productPayload);
-          onNotify && onNotify({ action: 'update', product: { ...productPayload, id: editingId }, message: 'Producto actualizado' });
+          // MODO EDICIÓN
+          await updateProduct(editingId, finalProduct);
+
+          // Actualizar estado local SIN duplicar
+          setProducts(prev => prev.map(p => 
+            String(p.id) === String(editingId) ? { ...finalProduct, id: editingId } : p
+          ));
+
+          alert('✅ Producto actualizado correctamente');
         } else {
-          const created = await createProduct(productPayload);
-          onNotify && onNotify({ action: 'create', product: created, message: 'Producto creado' });
+          // MODO CREACIÓN
+          const newProduct = { ...finalProduct, id: Date.now() };
+          const created = await createProduct(newProduct);
+
+          // Si Firestore no lo añade automáticamente, lo añadimos al estado local
+          if (!usingFirestore) {
+            setProducts(prev => [newProduct, ...prev]);
+          }
+          alert('✅ Producto creado con éxito');
         }
-      } catch (err) {
-        onNotify && onNotify('Error al guardar producto');
-      } finally {
-        setIsAdding(false);
+
+        // 3. RESET TOTAL (Limpia el editingId para que la próxima no sea edición)
         setEditingId(null);
-        setFormData({ name: '', price: '', vibe: 'Streetwear', sizes: '', gender: 'Dama', imagesDataUrls: [] });
+        setIsAdding(false);
+        setFormData({
+          name: '', price: '', brand: 'Nike', vibe: 'Streetwear', 
+          gender: 'Unisex', sizes: [], imagesDataUrls: [],
+          isPromo: false, promoPrice: '', promoUntil: ''
+        });
+
+      } catch (error) {
+        console.error("Error crítico:", error);
+        alert("❌ Error al procesar el producto");
       }
-    };   
+    };
 
   const handleEdit = (p) => {
     const imgs = Array.isArray(p.image) ? p.image : (p.image ? [p.image] : []);
+    console.log("handleEdit - iniciando edición para ID:", p.id);
     setFormData({ 
       name: p.name, 
       price: p.price, 
       vibe: p.vibe, 
-      sizes: p.sizes.join(', '), 
-      gender: p.gender || 'Dama', 
+      sizes: Array.isArray(p.sizes) ? p.sizes : (p.sizes ? p.sizes.split(',').map(s => s.trim()) : []), 
+      gender: p.gender || 'Unisex', 
+      brand: p.brand || 'Nike',
       imagesDataUrls: imgs,
       isPromo: !!p.isPromo,
       promoPrice: p.promoPrice || '',
@@ -477,15 +525,22 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
     setIsAdding(true);
   };   
 
+  const [removingId, setRemovingId] = useState(null);
+
   const handleDelete = async (id) => {
-    if (confirm('¿Eliminar este producto permanentemente?')) {
+    if (!confirm('¿Eliminar este producto permanentemente?')) return;
+    // Marca como "eliminando" para animar
+    setRemovingId(id);
+    setTimeout(async () => {
       try {
         await deleteProduct(id);
         onNotify && onNotify({ action: 'delete', id, message: 'Producto eliminado' });
       } catch (err) {
         onNotify && onNotify('Error al eliminar producto');
+      } finally {
+        setRemovingId(null);
       }
-    }
+    }, 300); // tiempo para que se muestre la animación
   }; 
 
   return (
@@ -502,7 +557,7 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
               if (isAdding) {
                 setIsAdding(false);
                 setEditingId(null);
-                setFormData({ name: '', price: '', vibe: 'Streetwear', sizes: '', gender: 'Dama', imagesDataUrls: [] });
+                setFormData({ name: '', price: '', vibe: 'Streetwear', sizes: [], gender: 'Unisex', brand: 'Nike', imagesDataUrls: [] });
               } else {
                 setIsAdding(true);
               }
@@ -532,6 +587,18 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
               Sincronizar catálogo
             </button>
           )}
+
+          {/* TEMP: botón para limpiar localStorage y recargar (limpia IDs viejos) */}
+          <button
+            onClick={() => {
+              if (!confirm('Limpiar localStorage y recargar la página? Esto borrará datos locales y recargará la app.')) return;
+              localStorage.clear();
+              window.location.reload();
+            }}
+            className="bg-rose-50 text-rose-500 px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-rose-200 hover:bg-rose-100 transition-all"
+          >
+            Reset local
+          </button>
         </div>
         </div>
 
@@ -549,29 +616,63 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
                 className="w-full bg-white px-6 py-4 rounded-xl border border-neutral-200 outline-none focus:border-amber-600"
                 value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} required 
               />
-              <select 
-                className="w-full bg-white px-6 py-4 rounded-xl border border-neutral-200 outline-none"
-                value={formData.vibe} onChange={e => setFormData({...formData, vibe: e.target.value})}
-              >
-                <option value="Streetwear">Streetwear</option>
-                <option value="Retro">Retro</option>
-                <option value="Limited">Limited</option>
-              </select>
-              <select 
-                className="w-full bg-white px-6 py-4 rounded-xl border border-neutral-200 outline-none"
-                value={formData.gender} onChange={e => setFormData({...formData, gender: e.target.value})} required
-              >
-                <option value="Dama">Dama</option>
-                <option value="Hombre">Hombre</option>
-                <option value="unisex">Unisex</option>
-              </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[8px] font-black uppercase ml-2 text-neutral-400">Marca</label>
+                  <select 
+                    className="w-full bg-white px-6 py-4 rounded-xl border border-neutral-200 outline-none focus:border-amber-600"
+                    value={formData.brand} onChange={e => setFormData({...formData, brand: e.target.value})}
+                  >
+                    {BRANDS.filter(b => b !== 'Todas').map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
+                
+                <div className="space-y-1">
+                  <label className="text-[8px] font-black uppercase ml-2 text-neutral-400">Género</label>
+                  <select 
+                    className="w-full bg-white px-6 py-4 rounded-xl border border-neutral-200 outline-none focus:border-amber-600"
+                    value={formData.gender} onChange={e => setFormData({...formData, gender: e.target.value})}
+                  >
+                    {GENDERS.filter(g => g !== 'Todos').map(g => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                </div>
+              </div>
             </div>
             <div className="space-y-4">
-              <input 
-                placeholder="Tallas (Ej: 38, 40, 42)" 
-                className="w-full bg-white px-6 py-4 rounded-xl border border-neutral-200 outline-none focus:border-amber-600"
-                value={formData.sizes} onChange={e => setFormData({...formData, sizes: e.target.value})} required 
-              />
+              {/* SECCIÓN DE TALLAS (36-45 EUR) */}
+              <div className="space-y-3">
+                <label className="text-[10px] font-black uppercase text-neutral-400 ml-2">Tallas Disponibles (EUR)</label>
+                <div className="flex flex-wrap gap-2 p-2 bg-neutral-50 rounded-2xl">
+                  {EURO_SIZES.map(size => (
+                    <button
+                      key={`size-btn-${size}`}
+                      type="button"
+                      onClick={() => toggleSize(size)}
+                      className={`w-10 h-10 rounded-xl text-[10px] font-bold transition-all border-2 ${
+                        formData.sizes.includes(size)
+                        ? 'bg-black text-white border-black shadow-md'
+                        : 'bg-white text-neutral-400 border-neutral-100 hover:border-neutral-300'
+                      }`}
+                    >
+                      {size}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* SECCIÓN DE ESTILO / OCASIÓN */}
+              <div className="space-y-3 mt-2">
+                <label className="text-[10px] font-black uppercase text-neutral-400 ml-2">Estilo / Ocasión</label>
+                <select 
+                  className="w-full bg-neutral-50 px-6 py-4 rounded-2xl border-none outline-none focus:ring-2 focus:ring-amber-500 font-bold text-sm"
+                  value={formData.vibe}
+                  onChange={e => setFormData({...formData, vibe: e.target.value})}
+                >
+                  {STYLES.filter(s => s !== 'Todos').map(style => (
+                    <option key={style} value={style}>{style}</option>
+                  ))}
+                </select>
+              </div>
 
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block">Fotos del Modelo</label>
@@ -628,8 +729,8 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
                   </div>
                 )}
 
-              <button className="w-full bg-black text-white py-4 rounded-xl font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2">
-                <Save size={16} /> Guardar Producto
+              <button type="submit" className="w-full bg-black text-white py-5 rounded-2xl font-black uppercase tracking-widest hover:bg-amber-600 transition-all">
+                Finalizar y Publicar
               </button>
             </div>
           </div>
@@ -638,10 +739,10 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
 
         <div className="grid gap-4">
           {products.map(p => (
-            <div key={p.id} className="flex items-center justify-between p-4 bg-neutral-50 rounded-2xl hover:bg-white border border-transparent hover:border-neutral-100 transition-all group">
+            <div key={p.id} className={`flex items-center justify-between p-4 bg-neutral-50 rounded-2xl hover:bg-white border border-transparent hover:border-neutral-100 transition-all group ${removingId && removingId.toString() === p.id.toString() ? 'animate-out fade-out slide-out-to-right duration-300' : ''}`}>
               <div className="flex items-center gap-4">
                 <div className="w-16 h-16 bg-white rounded-xl overflow-hidden flex items-center justify-center">
-                   <img src={p.image} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+                   <img src={Array.isArray(p.image) ? p.image[0] : p.image} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
                 </div>
                 <div>
                   <h4 className="font-bold text-lg">{p.name}</h4>
@@ -649,10 +750,16 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
                 </div>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => handleEdit(p)} className="p-3 bg-white text-amber-600 rounded-xl hover:bg-amber-600 hover:text-white transition-all shadow-sm">
+                <button type="button" onClick={(e) => { e.stopPropagation(); handleEdit(p); }} className="p-3 bg-white text-amber-600 rounded-xl hover:bg-amber-600 hover:text-white transition-all shadow-sm" title="Editar">
                   <Edit size={16} />
                 </button>
-                <button onClick={() => handleDelete(p.id)} className="p-3 bg-white text-rose-500 rounded-xl hover:bg-rose-500 hover:text-white transition-all shadow-sm">
+                <button 
+                  type="button" 
+                  onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }} 
+                  className={`p-3 rounded-xl transition-all ${removingId === p.id ? 'opacity-50 scale-90 bg-gray-200' : 'bg-white text-rose-500 hover:bg-rose-500 hover:text-white'}`}
+                  disabled={removingId === p.id}
+                  title="Eliminar"
+                >
                   <Trash2 size={16} />
                 </button>
               </div>
@@ -678,8 +785,8 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
   };
 
   return (
-    <nav className="fixed top-0 w-full z-[150] h-16 md:h-20 bg-[#FDFCFB] border-b border-black/5">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-full flex justify-between items-center relative z-[160] bg-[#FDFCFB]">
+    <nav className={`fixed top-0 w-full z-[100] pointer-events-none transition-transform duration-300`}>
+      <div className="bg-white border-b border-neutral-100 h-16 md:h-20 flex items-center justify-between px-6 relative z-[101] pointer-events-auto max-w-7xl mx-auto">
         {/* Logo */}
         <div 
           className="text-2xl font-black tracking-tighter cursor-pointer" 
@@ -732,40 +839,72 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
 
       {/* MENÚ MÓVIL: Despliegue de ARRIBA hacia ABAJO */}
       <div className={`
-        md:hidden fixed inset-x-0 top-0 bg-white z-[155] w-full transition-all duration-500 ease-in-out transform
-        ${mobileMenuOpen ? 'translate-y-16 opacity-100 h-screen' : '-translate-y-full opacity-0 h-0'}
+        md:hidden fixed inset-0 bg-white transition-all duration-500 ease-in-out transform
+        ${mobileMenuOpen ? 'translate-y-0 opacity-100 z-[200] pointer-events-auto' : '-translate-y-full opacity-0 -z-10 pointer-events-none'}
       `}>
-        <div className="p-8 flex flex-col gap-6 bg-white h-full border-t border-neutral-100">
+        <div className="p-8 flex flex-col gap-6 bg-white h-full pt-24 pointer-events-auto"> {/* pt-24 para que los botones no queden tras la barra de arriba */}
+          {/* Botón de Cerrar (Opcional pero recomendado para UX) */}
           <button 
-            onClick={() => navigateTo('shop', 'catalog')}
-            className={`flex items-center justify-between p-6 rounded-3xl text-sm font-black uppercase tracking-widest ${activeTab === 'shop' ? 'bg-black text-white' : 'bg-neutral-50 text-neutral-800'}`}
+            onClick={() => setMobileMenuOpen(false)}
+            className="absolute top-6 right-6 p-2 bg-neutral-100 rounded-full"
+          >
+            <X size={24} />
+          </button>
+
+          <button 
+            onClick={() => {
+              setActiveTab('shop');
+              setMobileMenuOpen(false);
+              // Si tienes una función scroll para ir al catálogo:
+              document.getElementById('catalog')?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className={`flex items-center justify-between p-6 rounded-3xl text-sm font-black uppercase tracking-widest ${activeTab === 'shop' ? 'bg-black text-white shadow-xl' : 'bg-neutral-50 text-neutral-800'}`}
           >
             Catálogo <TrendingUp size={18} />
           </button>
 
+          {/* FIX: Aseguramos que onOpenAssistant se llame correctamente */}
           <button 
-            onClick={() => { onOpenAssistant(); setMobileMenuOpen(false); }}
-            className="flex items-center justify-between p-6 rounded-3xl text-sm font-black uppercase tracking-widest bg-neutral-50 text-neutral-800"
+            onClick={() => { 
+              setMobileMenuOpen(false);
+              setTimeout(() => onOpenAssistant(), 300); // Pequeño delay para que cierre el menú primero
+            }}
+            className="flex items-center justify-between p-6 rounded-3xl text-sm font-black uppercase tracking-widest bg-neutral-50 text-neutral-800 active:scale-95 transition-transform"
           >
             Asistente AI <Sparkles size={18} />
           </button>
 
           <button 
-            onClick={() => navigateTo('sizes')}
-            className={`flex items-center justify-between p-6 rounded-3xl text-sm font-black uppercase tracking-widest ${activeTab === 'sizes' ? 'bg-amber-600 text-white' : 'bg-neutral-50 text-neutral-800'}`}
+            onClick={() => {
+              setActiveTab('sizes');
+              setMobileMenuOpen(false);
+            }}
+            className={`flex items-center justify-between p-6 rounded-3xl text-sm font-black uppercase tracking-widest ${activeTab === 'sizes' ? 'bg-amber-600 text-white' : 'bg-neutral-50 text-neutral-800'} active:scale-95 transition-transform`}
           >
             Guía de Tallas <Maximize2 size={18} />
           </button>
 
-          <div className="mt-auto pb-20 space-y-8">
+          {/* Sección inferior con Logout/Login */}
+          <div className="mt-auto pb-10 space-y-8">
             <div className="flex justify-center gap-8">
               <Instagram size={24} className="text-neutral-400" />
               <MessageCircle size={24} className="text-neutral-400" />
             </div>
-            {userRole ? (
-              <button onClick={onLogout} className="w-full py-5 rounded-2xl bg-rose-50 text-rose-500 font-black uppercase text-[10px] tracking-widest">Cerrar Sesión</button>
+            
+            {currentUser ? (
+              <button 
+                onClick={() => { onLogout(); setMobileMenuOpen(false); }} 
+                className="w-full py-5 rounded-2xl bg-rose-50 text-rose-500 font-black uppercase text-[10px] tracking-widest"
+              >
+                Cerrar Sesión
+              </button>
             ) : (
-              <button onClick={() => { onOpenLogin(); setMobileMenuOpen(false); }} className="w-full py-5 rounded-2xl bg-black text-white font-black uppercase text-[10px] tracking-widest">Iniciar Sesión</button>
+              <button 
+                onClick={() => { onOpenLogin(); setMobileMenuOpen(false); }} 
+                className="w-full py-5 rounded-2xl bg-black text-white font-black uppercase text-[10px] tracking-widest shadow-lg"
+              >
+                Iniciar Sesión
+              </button>
             )}
           </div>
         </div>
@@ -825,27 +964,110 @@ const Hero = ({ onOpenAssistant }) => (
 );
 
 const ProductCard = ({ product, onClick }) => (
-  <div className="group cursor-pointer animate-in fade-in duration-700" onClick={() => onClick(product)}>
-    <div className="aspect-[4/5] bg-neutral-100 rounded-[2.5rem] mb-8 relative overflow-hidden flex items-center justify-center">
-      <img src={Array.isArray(product.image) ? product.image[0] : product.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
-      <div className="absolute top-6 left-6 bg-white/90 backdrop-blur px-3 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-widest text-amber-600">
-        {product.vibe}
-      </div>
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 translate-y-20 group-hover:translate-y-0 transition-transform duration-500">
-        <div className="bg-white text-black px-6 py-3 rounded-full text-[9px] font-black uppercase tracking-widest shadow-xl flex items-center gap-2">
-          Detalles <Maximize2 size={10} />
-        </div>
+  <div 
+    className="group cursor-pointer active:scale-95 transition-transform duration-200" 
+    onClick={() => onClick(product)}
+    style={{ touchAction: 'manipulation' }}
+  >
+    <div className="aspect-[4/5] bg-neutral-100 rounded-[2rem] sm:rounded-[2.5rem] mb-4 relative overflow-hidden">
+      <img src={Array.isArray(product.image) ? product.image[0] : product.image} className="w-full h-full object-cover" loading="lazy" />
+      <div className="absolute top-4 left-4 bg-white/90 backdrop-blur px-3 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-widest text-black shadow-sm">
+        {product.brand}
       </div>
     </div>
-    <div className="flex justify-between items-start text-left">
-      <div className="flex-1">
-        <h3 className="font-black text-xl mb-1 tracking-tight group-hover:text-amber-600 transition-colors uppercase">{product.name}</h3>
-        <p className="text-neutral-400 text-[10px] font-bold uppercase tracking-widest italic">Standard Triple A</p>
+    <div className="flex justify-between items-start px-1">
+      <div>
+        <h3 className="font-black text-base sm:text-lg leading-tight uppercase">{product.name}</h3>
+        <p className="text-neutral-400 text-[9px] font-bold uppercase tracking-widest">{product.gender} • {product.vibe}</p>
       </div>
-      <p className="font-black text-lg whitespace-nowrap">$ {product.price.toLocaleString('es-CO')}</p>
+      <div className="text-right">
+        {product.isPromo && product.promoPrice ? (
+          <>
+            <p className="font-black text-sm sm:text-base whitespace-nowrap text-amber-600">${Number(product.promoPrice).toLocaleString()}</p>
+            <p className="text-[9px] text-neutral-400 line-through">${Number(product.price).toLocaleString()}</p>
+          </>
+        ) : (
+          <p className="font-black text-sm sm:text-base whitespace-nowrap text-amber-600">${Number(product.price).toLocaleString()}</p>
+        )}
+      </div>
     </div>
   </div>
 );
+
+const CatalogSection = ({ products, onProductClick, activeBrand, setActiveBrand, activeStyle, setActiveStyle, activeGender, setActiveGender }) => {
+  const filteredProducts = useMemo(() => {
+    return products.filter(p => {
+      const matchBrand = activeBrand === 'Todas' || p.brand === activeBrand;
+      const matchStyle = activeStyle === 'Todos' || p.vibe === activeStyle;
+      const matchGender = activeGender === 'Todos' || p.gender === activeGender;
+      return matchBrand && matchStyle && matchGender;
+    });
+  }, [activeBrand, activeStyle, activeGender, products]);
+
+  return (
+    <section id="catalog" className="py-12 md:py-20 px-4 sm:px-6">
+      <div className="max-w-7xl mx-auto">
+        <div className="mb-10 space-y-8">
+          <div className="text-center md:text-left">
+            <h2 className="text-4xl md:text-6xl font-black tracking-tighter uppercase italic leading-none mb-2">The Drop</h2>
+            <p className="text-gray-400 font-bold text-[10px] uppercase tracking-[0.2em]">Selección Curada: {filteredProducts.length} Modelos</p>
+          </div>
+
+          <div className="flex justify-center md:justify-start gap-6 border-b border-neutral-100 pb-4 overflow-x-auto no-scrollbar touch-pan-x">
+            {GENDERS.map(g => (
+              <button 
+                key={g} 
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveGender(g); }}
+                className={`relative py-2 text-[11px] font-black uppercase tracking-widest min-w-[60px] transition-all ${activeGender === g ? 'text-amber-600 border-b-2 border-amber-600' : 'text-neutral-400'}`}
+              >
+                {g}
+                {activeGender === g && (
+                  <div className="absolute bottom-0 left-0 w-full h-0.5 bg-amber-600 animate-in fade-in duration-300" />
+                )}
+              </button>
+            ))}
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-[8px] font-black uppercase text-neutral-400 tracking-widest text-center md:text-left">Marcas</p>
+            <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 px-4 md:mx-0 md:px-0 touch-pan-x">
+              {BRANDS.map((brand) => (
+                <button 
+                  key={brand} 
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveBrand(brand); }} 
+                  className={activeBrand === brand ? 'flex-shrink-0 min-h-[48px] px-8 rounded-full text-[10px] font-black uppercase tracking-widest transition-all border-2 bg-black text-white border-black shadow-xl scale-105' : 'flex-shrink-0 min-h-[48px] px-8 rounded-full text-[10px] font-black uppercase tracking-widest transition-all border-2 border-neutral-100 bg-white active:bg-neutral-50'}
+                >
+                  {brand}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-[8px] font-black uppercase text-neutral-400 tracking-widest text-center md:text-left">Estilo / Ocasión</p>
+            <div className="flex flex-wrap justify-center md:justify-start gap-2">
+              {STYLES.map((style) => (
+                <button 
+                  key={style} 
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveStyle(style); }} 
+                  className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${activeStyle === style ? 'bg-amber-100 text-amber-700 border-amber-200 shadow-sm' : 'bg-neutral-50 text-neutral-500 border-transparent'}`}
+                >
+                  {style}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
+          {filteredProducts.map((p) => (
+            <ProductCard key={p.id} product={p} onClick={onProductClick} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+};
 
 const ProductModal = ({ product, onClose }) => {
   const [selectedSize, setSelectedSize] = useState(null);
@@ -919,7 +1141,14 @@ const ProductModal = ({ product, onClose }) => {
         <div className="md:w-1/2 p-12 flex flex-col text-left">
           <span className="text-amber-600 font-bold text-[10px] uppercase tracking-[0.3em] mb-4">{product.vibe} Collection</span>
           <h2 className="text-4xl font-black tracking-tighter mb-2 leading-none uppercase">{product.name}</h2>
-          <p className="text-2xl font-bold mb-8">$ {product.price.toLocaleString('es-CO')}</p>
+          {product.isPromo && product.promoPrice ? (
+            <div className="mb-8">
+              <p className="text-2xl font-black mb-1 text-amber-600">$ {Number(product.promoPrice).toLocaleString('es-CO')}</p>
+              <p className="text-sm text-neutral-400 line-through">$ {Number(product.price).toLocaleString('es-CO')}</p>
+            </div>
+          ) : (
+            <p className="text-2xl font-bold mb-8">$ {Number(product.price).toLocaleString('es-CO')}</p>
+          )}
 
           <div className="mb-8 p-6 bg-amber-50 rounded-3xl border border-amber-100">
             <h3 className="text-[9px] font-black uppercase tracking-widest text-amber-800 mb-3 flex items-center gap-2">
@@ -1327,11 +1556,24 @@ export default function App() {
   // Notification message (used to show cross-tab updates)
   const [notif, setNotif] = useState('');
 
+  // Firestore usage detection (env vars OR firebase config present)
+  const usingFirestore = Boolean((import.meta.env.VITE_FIREBASE_PROJECT_ID && import.meta.env.VITE_FIREBASE_API_KEY) || firebaseConfigured);
+
+  // Check whether the app has been initialized before
+  const initialSaved = localStorage.getItem('verzing_products');
+  const wasInitialized = localStorage.getItem('verzing_initialized') === '1';
+
   const [products, setProducts] = useState(() => {
-    const saved = localStorage.getItem('verzing_products');
-    return saved ? JSON.parse(saved) : DEFAULT_PRODUCTS;
+    // If Firestore is enabled, don't load cached local data to avoid stale overrides
+    if (usingFirestore) return [];
+    if (initialSaved) return JSON.parse(initialSaved);
+    // Only seed defaults on absolute first run
+    return !wasInitialized ? DEFAULT_PRODUCTS : [];
   });
   const [activeVibe, setActiveVibe] = useState('all');
+  const [activeBrand, setActiveBrand] = useState('Todas');
+  const [activeStyle, setActiveStyle] = useState('Todos');
+  const [activeGender, setActiveGender] = useState('Todos');
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
@@ -1367,22 +1609,37 @@ export default function App() {
     }
   }, []);
 
-  // Firestore usage detection (env vars OR firebase config present)
-  const [usingFirestore] = useState(Boolean((import.meta.env.VITE_FIREBASE_PROJECT_ID && import.meta.env.VITE_FIREBASE_API_KEY) || firebaseConfigured));
+  // (usingFirestore already computed above)
 
   // If Firestore is enabled, subscribe to the productos collection in real time
   useEffect(() => {
     if (!usingFirestore) return;
     const q = query(collection(db, 'productos'), orderBy('createdAt', 'desc'));
     const unsub = onSnapshot(q, (snap) => {
-      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setProducts(docs.length ? docs : DEFAULT_PRODUCTS);
+      // Normalize data so Firestore doc ID always wins (over any id in the body)
+      const docs = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+      // Deduplicate by ID just in case the snapshot contains duplicates
+      const unique = Array.from(new Map(docs.map(d => [String(d.id), d])).values());
+      if (unique.length !== docs.length) console.warn('onSnapshot: removed duplicate docs in snapshot');
+      // Replace local state with authoritative Firestore data
+      console.log('onSnapshot: received', unique.length, 'productos');
+      setProducts(unique);
     }, (err) => {
       // eslint-disable-next-line no-console
       console.error('Firestore onSnapshot error', err);
     });
     return () => unsub();
   }, [usingFirestore]);
+
+  // If this is the absolute first run and we seeded DEFAULT_PRODUCTS above, persist that seed
+  useEffect(() => {
+    if (usingFirestore) return;
+    const savedNow = localStorage.getItem('verzing_products');
+    if (!savedNow && products && products.length > 0) {
+      localStorage.setItem('verzing_products', JSON.stringify(products));
+      localStorage.setItem('verzing_initialized', '1');
+    }
+  }, []); // run once
 
   useEffect(() => {
     if (!usingFirestore) localStorage.setItem('verzing_products', JSON.stringify(products));
@@ -1457,34 +1714,93 @@ export default function App() {
   const createProduct = async (product) => {
     if (!usingFirestore) {
       const newProduct = { ...product, id: Date.now() };
-      const updated = [...products, newProduct];
-      setProducts(updated);
-      handleNotify({ action: 'create', product: newProduct, products: updated, message: 'Producto creado' });
+      // Use updater to avoid stale closures
+      setProducts(prev => {
+        const updated = [...prev, newProduct];
+        localStorage.setItem('verzing_products', JSON.stringify(updated));
+        handleNotify({ action: 'create', product: newProduct, products: updated, message: 'Producto creado' });
+        return updated;
+      });
       return newProduct;
     }
+
+    // If the product already carries an ID (e.g., Date.now() from admin UI), use it as the document ID
+    if (product.id) {
+      const idStr = String(product.id);
+      const productRef = doc(db, 'productos', idStr);
+      await setDoc(productRef, { ...product, createdAt: serverTimestamp() });
+      return { id: idStr, ...product };
+    }
+
+    // Otherwise use addDoc to let Firestore generate an ID
     const col = collection(db, 'productos');
     const docRef = await addDoc(col, { ...product, createdAt: serverTimestamp() });
     return { id: docRef.id, ...product };
-  };
+  }; 
 
   const updateProduct = async (id, product) => {
     if (!usingFirestore) {
-      const updated = products.map(p => p.id === id ? { ...product, id } : p);
-      setProducts(updated);
-      handleNotify({ action: 'update', product: { ...product, id }, products: updated, message: 'Producto actualizado' });
+      // Use updater function to avoid stale closures and add debug logs
+      setProducts(prev => {
+        const updated = prev.map(p => {
+          console.log("updateProduct mapping - ID buscado:", id, "ID en lista:", p.id);
+          return String(p.id) === String(id) ? { ...product, id } : p;
+        });
+        // Persist immediately to localStorage
+        localStorage.setItem('verzing_products', JSON.stringify(updated));
+        handleNotify({ action: 'update', product: { ...product, id }, products: updated, message: 'Producto actualizado' });
+        return updated;
+      });
       return;
     }
-    await setDoc(doc(db, 'productos', String(id)), { ...product, updatedAt: serverTimestamp() }, { merge: true });
-  };
+    // Ensure Firestore ID is a string
+    const productRef = doc(db, 'productos', String(id));
+    await setDoc(productRef, { ...product, updatedAt: serverTimestamp() }, { merge: true });
+  }; 
 
   const deleteProduct = async (id) => {
-    if (!usingFirestore) {
-      const updated = products.filter(p => p.id !== id);
-      setProducts(updated);
-      handleNotify({ action: 'delete', id, products: updated, message: 'Producto eliminado' });
-      return;
+    const idStr = String(id);
+    try {
+      if (usingFirestore) {
+        console.log('Intentando borrar ID:', idStr);
+
+        const docRef = doc(db, 'productos', idStr);
+        // Verify document exists before deleting
+        const snap = await getDoc(docRef);
+        if (!snap.exists()) {
+          console.warn('deleteProduct: documento no encontrado en Firestore para ID:', idStr);
+          alert('❌ El documento no existe en Firestore o el ID no coincide. Revisa la consola de Firebase para confirmar el nombre del documento.');
+          return;
+        }
+
+        // Await delete in Firestore first — only on success we update UI
+        await deleteDoc(docRef);
+
+        // After successful delete, update local UI to match Firestore
+        setProducts(prev => {
+          const updated = prev.filter(p => String(p.id) !== idStr);
+          handleNotify({ action: 'delete', id: idStr, products: updated, message: 'Producto eliminado' });
+          return updated;
+        });
+
+        console.log(`Producto ${idStr} eliminado en Firestore.`);
+        return;
+      }
+
+      // Non-Firestore: update UI and persist to localStorage immediately
+      setProducts(prev => {
+        const updated = prev.filter(p => String(p.id) !== idStr);
+        localStorage.setItem('verzing_products', JSON.stringify(updated));
+        handleNotify({ action: 'delete', id: idStr, products: updated, message: 'Producto eliminado' });
+        return updated;
+      });
+
+      console.log(`Producto ${idStr} eliminado en local.`);
+    } catch (err) {
+      console.error('Error eliminando producto:', err);
+      alert('❌ No se pudo eliminar el producto: ' + (err?.message || err));
+      throw err;
     }
-    await deleteDoc(doc(db, 'productos', String(id)));
   };
 
   // Migrate current local products to Firestore (overwrites by id)
@@ -1547,11 +1863,7 @@ export default function App() {
     localStorage.removeItem('verzing_session');
   }; 
 
-  const filteredProducts = useMemo(() => {
-    return products.filter(p => activeVibe === 'all' || p.vibe === activeVibe);
-  }, [activeVibe, products]);
-
-  const categories = ['all', 'Streetwear', 'Retro', 'Limited'];
+  // Catalog filtering is handled inside the new <CatalogSection /> component.
 
   return (
     <div className="min-h-screen bg-[#FDFCFB] text-[#1A1A1A] font-sans selection:bg-amber-100 selection:text-amber-900 relative">
@@ -1561,6 +1873,15 @@ export default function App() {
         .border-text { -webkit-text-stroke: 1px #1A1A1A; color: transparent; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Mobile click & highlight fixes */
+        button, a, input, select {
+          touch-action: manipulation;
+          -webkit-tap-highlight-color: transparent;
+        }
+
+        /* Prevent filters being hidden under sticky navbar when scrolling */
+        #catalog { scroll-margin-top: 96px; }
       `}</style>
 
       <Navbar 
@@ -1586,33 +1907,13 @@ export default function App() {
             <AdminPanel products={products} setProducts={setProducts} onNotify={(msg) => handleNotify(msg)} createProduct={createProduct} updateProduct={updateProduct} deleteProduct={deleteProduct} usingFirestore={usingFirestore} migrateProductsToFirestore={migrateProductsToFirestore} />
           )}
 
-          {/* Catálogo Section */}
-          <section id="catalog" className="py-20 px-6">
-            <div className="max-w-7xl mx-auto text-left">
-              <div className={`sticky top-20 z-40 bg-[#FDFCFB]/95 backdrop-blur-md py-10 border-b border-black/5 flex flex-col md:flex-row justify-between items-start md:items-end gap-10 mb-20 transition-all duration-300 ${isHeaderSticky ? 'shadow-sm px-6 -mx-6 rounded-b-3xl' : ''}`}>
-                <div>
-                  <h2 className="text-4xl sm:text-6xl font-black tracking-tighter mb-4 uppercase leading-none italic">The Drop</h2>
-                  <p className="text-gray-400 font-medium text-sm">Mostrando {filteredProducts.length} modelos exclusivos.</p>
-                </div>
-                <div className="flex gap-2 w-full md:w-auto no-scrollbar overflow-x-auto pb-2">
-                  {categories.map((vibe) => (
-                    <button 
-                      key={vibe} 
-                      onClick={() => setActiveVibe(vibe)} 
-                      className={`flex-shrink-0 px-8 py-3.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all border-2 ${activeVibe === vibe ? 'bg-black text-white border-black shadow-lg scale-105' : 'border-neutral-100 hover:border-black bg-white/50'}`}
-                    >
-                      {vibe === 'all' ? 'Todos' : vibe}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-12">
-                {filteredProducts.map((p) => (
-                  <ProductCard key={p.id} product={p} onClick={setSelectedProduct} />
-                ))}
-              </div> 
-            </div>
-          </section>
+          <CatalogSection 
+            products={products} 
+            onProductClick={setSelectedProduct} 
+            activeBrand={activeBrand} setActiveBrand={setActiveBrand}
+            activeStyle={activeStyle} setActiveStyle={setActiveStyle}
+            activeGender={activeGender} setActiveGender={setActiveGender}
+          />
         </>
       )}
 
@@ -1631,7 +1932,7 @@ export default function App() {
       <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} onLogin={(user) => { handleLogin(user); setIsLoginOpen(false); }} />
 
       {!isAssistantOpen && (
-        <button onClick={() => setIsAssistantOpen(true)} className="fixed bottom-10 right-10 z-[100] bg-black text-white p-5 rounded-full shadow-2xl hover:bg-amber-600 transition-all hover:scale-110 active:scale-95 group">
+        <button onClick={() => setIsAssistantOpen(true)} className="fixed bottom-10 right-10 z-[40] bg-black text-white p-5 rounded-full shadow-2xl hover:bg-amber-600 transition-all hover:scale-110 active:scale-95 group">
           <Sparkles size={24} className="group-hover:animate-spin" />
         </button>
       )}
