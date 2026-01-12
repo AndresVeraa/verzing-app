@@ -68,6 +68,18 @@ const DEFAULT_PRODUCTS = [
     image: "https://images.unsplash.com/photo-1512374382149-433a4279743a?q=80&w=800",
     sizes: [40, 41, 42, 43, 44],
     popularity: [80, 85, 90, 95, 98, 100]
+  },
+  {
+    id: 4,
+    name: "Nike Air Max Uptempo",
+    price: 650000,
+    promoPrice: 480000,
+    promoUntil: "2026-01-20T23:59:59",
+    vibe: "Limited",
+    isPromo: true,
+    image: "https://images.unsplash.com/photo-1549989473-8e6a3b8f1d60?q=80&w=800",
+    sizes: [39, 40, 41, 42],
+    popularity: [60, 70, 80, 90, 95, 99]
   }
 ];
 
@@ -366,7 +378,7 @@ const LoginModal = ({ isOpen, onClose, onLogin }) => {
 const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProduct, deleteProduct, usingFirestore, migrateProductsToFirestore }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
-    const [formData, setFormData] = useState({ name: '', price: '', vibe: 'Streetwear', sizes: '', gender: 'Dama', imagesDataUrls: [] });
+    const [formData, setFormData] = useState({ name: '', price: '', vibe: 'Streetwear', sizes: '', gender: 'Dama', imagesDataUrls: [], isPromo: false, promoPrice: '', promoUntil: '' });
 
     // Maneja la carga de múltiples archivos y los convierte a Data URLs en formato JPEG para persistir en localStorage
     const handleFileChange = async (e) => {
@@ -425,8 +437,11 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
         gender: formData.gender,
         image: imgField,
         sizes: formData.sizes.split(',').map(s => parseInt(s.trim())),
-        popularity: Array.from({length: 6}, () => Math.floor(Math.random() * 100))
-      };
+        popularity: Array.from({length: 6}, () => Math.floor(Math.random() * 100)),
+        isPromo: !!formData.isPromo,
+        promoPrice: formData.isPromo ? parseInt(formData.promoPrice || 0) : undefined,
+        promoUntil: formData.isPromo ? formData.promoUntil : undefined
+      }; 
 
       try {
         if (editingId) {
@@ -447,10 +462,20 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
 
   const handleEdit = (p) => {
     const imgs = Array.isArray(p.image) ? p.image : (p.image ? [p.image] : []);
-    setFormData({ name: p.name, price: p.price, vibe: p.vibe, sizes: p.sizes.join(', '), gender: p.gender || 'Dama', imagesDataUrls: imgs });
+    setFormData({ 
+      name: p.name, 
+      price: p.price, 
+      vibe: p.vibe, 
+      sizes: p.sizes.join(', '), 
+      gender: p.gender || 'Dama', 
+      imagesDataUrls: imgs,
+      isPromo: !!p.isPromo,
+      promoPrice: p.promoPrice || '',
+      promoUntil: p.promoUntil || ''
+    });
     setEditingId(p.id);
     setIsAdding(true);
-  };  
+  };   
 
   const handleDelete = async (id) => {
     if (confirm('¿Eliminar este producto permanentemente?')) {
@@ -572,10 +597,42 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
                 )}
               </div>
 
+              {/* Promo fields */}
+              <div className="md:col-span-2 p-6 bg-amber-50 rounded-3xl border-2 border-amber-100 space-y-4">
+                <div className="flex items-center gap-3">
+                  <input 
+                    type="checkbox" 
+                    id="isPromo"
+                    checked={formData.isPromo}
+                    onChange={e => setFormData({...formData, isPromo: e.target.checked})}
+                    className="w-5 h-5 accent-amber-600"
+                  />
+                  <label htmlFor="isPromo" className="text-sm font-black uppercase italic">¿Es una promoción activa?</label>
+                </div>
+
+                {formData.isPromo && (
+                  <div className="grid md:grid-cols-2 gap-4 animate-in fade-in zoom-in-95">
+                    <input 
+                      placeholder="Precio de Oferta" 
+                      type="number" 
+                      className="w-full bg-white px-6 py-4 rounded-xl border border-neutral-200"
+                      value={formData.promoPrice} 
+                      onChange={e => setFormData({...formData, promoPrice: e.target.value})} 
+                    />
+                    <input 
+                      type="datetime-local" 
+                      className="w-full bg-white px-6 py-4 rounded-xl border border-neutral-200"
+                      value={formData.promoUntil} 
+                      onChange={e => setFormData({...formData, promoUntil: e.target.value})} 
+                    />
+                  </div>
+                )}
+
               <button className="w-full bg-black text-white py-4 rounded-xl font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2">
                 <Save size={16} /> Guardar Producto
               </button>
             </div>
+          </div>
           </form>
         )}
 
@@ -815,12 +872,14 @@ const ProductModal = ({ product, onClose }) => {
     if (!selectedSize) { alert('Por favor, selecciona una talla primero.'); return; }
     const phone = (WHATSAPP_NUMBER || '').toString().replace(/\D/g, '');
     if (!phone) { alert('Número de WhatsApp no configurado'); return; }
-    const message = `Hola Verzing! 👋\n\nEstoy interesado en estos sneakers:\n*Modelo:* ${product.name}\n*Talla:* ${selectedSize}\n\n¿Están disponibles?`;
+    const priceText = product.isPromo && product.promoPrice ? Number(product.promoPrice).toLocaleString('es-CO') : Number(product.price).toLocaleString('es-CO');
+    const promoText = product.isPromo ? ` que está en oferta a $${priceText}` : '';
+    const message = `Hola Verzing! 👋\n\nEstoy interesado en el modelo *${product.name}*${promoText}\n*Talla:* ${selectedSize}\n\n¿Está disponible?`;
     const encodedMessage = encodeURIComponent(message);
     const whatsappUrl = `https://wa.me/${phone}?text=${encodedMessage}`;
     const w = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
     if (!w) window.location.href = whatsappUrl;
-  };
+  }; 
 
   const chartData = {
     labels: ['W1', 'W2', 'W3', 'W4', 'W5', 'Ahora'],
@@ -960,6 +1019,76 @@ const AIAssistant = ({ isOpen, onClose, products }) => {
         </div>
       </div>
     </div>
+  );
+};
+
+const PromoSection = ({ products, onProductClick }) => {
+  const promoProducts = products.filter(p => p.isPromo && p.promoUntil && new Date(p.promoUntil) > new Date());
+  if (promoProducts.length === 0) return null;
+
+  const PromoCard = ({ p }) => {
+    const [now, setNow] = useState(Date.now());
+    useEffect(() => {
+      const id = setInterval(() => setNow(Date.now()), 1000);
+      return () => clearInterval(id);
+    }, []);
+
+    const until = new Date(p.promoUntil).getTime();
+    const diff = Math.max(0, until - now);
+    const days = Math.floor(diff / (24*60*60*1000));
+    const hours = Math.floor((diff % (24*60*60*1000)) / (60*60*1000));
+    const minutes = Math.floor((diff % (60*60*1000)) / (60*1000));
+    const seconds = Math.floor((diff % (60*1000)) / 1000);
+
+    const expired = diff <= 0;
+
+    return (
+      <div className="group cursor-pointer bg-zinc-900 rounded-[2.5rem] p-4 border border-white/5 hover:border-amber-600/50 transition-all" onClick={() => !expired && onProductClick(p)}>
+        <div className="aspect-square rounded-[2rem] overflow-hidden relative mb-6">
+          <img src={Array.isArray(p.image) ? p.image[0] : p.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+          <div className="absolute top-4 right-4 bg-amber-600 text-black px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest animate-pulse">-{Math.round((1 - p.promoPrice / p.price) * 100)}%</div>
+        </div>
+        <div className="px-4 pb-4">
+          <h3 className="text-xl font-black uppercase mb-2">{p.name}</h3>
+          <div className="flex items-center gap-4">
+            <span className="text-2xl font-black text-amber-600">${Number(p.promoPrice).toLocaleString()}</span>
+            <span className="text-sm text-zinc-500 line-through">${Number(p.price).toLocaleString()}</span>
+          </div>
+          <div className="mt-6 pt-6 border-t border-white/5 flex items-center justify-between">
+             <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Finaliza pronto</span>
+             {expired ? (
+               <div className="text-xs font-black uppercase bg-black/60 px-3 py-1 rounded">Finalizada</div>
+             ) : (
+               <div className="flex gap-2">
+                  <div className="bg-black px-2 py-1 rounded text-xs font-black">{days}d</div>
+                  <div className="bg-black px-2 py-1 rounded text-xs font-black">{hours}h</div>
+                  <div className="bg-black px-2 py-1 rounded text-xs font-black">{minutes}m</div>
+                  <div className="bg-black px-2 py-1 rounded text-xs font-black">{seconds}s</div>
+               </div>
+             )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <section className="py-20 bg-black text-white overflow-hidden relative">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="flex flex-col md:flex-row justify-between items-end mb-12 gap-6">
+          <div>
+            <h2 className="text-5xl md:text-7xl font-black uppercase tracking-tighter italic leading-none">Ofertas <span className="text-amber-600">Flash</span></h2>
+            <p className="text-zinc-500 font-bold uppercase tracking-widest mt-4">Solo por tiempo limitado</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {promoProducts.map(p => (
+            <PromoCard key={p.id} p={p} />
+          ))}
+        </div>
+      </div>
+    </section>
   );
 };
 
@@ -1449,6 +1578,9 @@ export default function App() {
       {activeTab === 'shop' && (
         <>
           <Hero onOpenAssistant={() => setIsAssistantOpen(true)} userRole={userRole} />
+
+          {/* Sección de Promociones */}
+          <PromoSection products={products} onProductClick={setSelectedProduct} />
 
           {userRole === 'admin' && (
             <AdminPanel products={products} setProducts={setProducts} onNotify={(msg) => handleNotify(msg)} createProduct={createProduct} updateProduct={updateProduct} deleteProduct={deleteProduct} usingFirestore={usingFirestore} migrateProductsToFirestore={migrateProductsToFirestore} />
