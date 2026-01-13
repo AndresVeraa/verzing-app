@@ -102,7 +102,7 @@ const USER_PASSWORD = "user123";
 // Número de WhatsApp para consultas (código de país + número, sin '+', ej: '573004371955')
 const WHATSAPP_NUMBER = '573004371955';
 
-const BRANDS = ['Todas', 'Nike', 'Adidas', 'Jordan', 'New Balance', 'On Cloud', 'Asics', 'Puma', 'Reebok', 'Vans', 'Converse', 'Under Armour', 'Skechers', 'Louis Vuitton', 'Dolce & Gabbana'];
+const BRANDS = ['Todas', 'Nike', 'Adidas', 'Jordan', 'New Balance', 'On Cloud', 'Asics', 'Puma', 'Reebok', 'Vans', 'Converse', 'Under Armour', 'Skechers', 'Louis Vuitton', 'Dolce & Gabbana', 'Amiri', 'Hugo boss', 'La coste ', 'Le coq sportif', 'Fila', 'OFF WHITE'];
 const STYLES = ['Todos', 'Streetwear', 'Retro', 'Limited', 'Deportivo', 'Casual', 'Para Salir'];
 const GENDERS = ['Todos', 'Hombre', 'Dama', 'Unisex', 'Niños'];
 const EURO_SIZES = ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45'];
