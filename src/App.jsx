@@ -792,7 +792,7 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
           className="text-2xl font-black tracking-tighter cursor-pointer" 
           onClick={() => navigateTo('shop')}
         >
-          VERZING<span className="text-amber-600">.</span>
+          VERZING<span className="text-amber-600">.CO</span>
         </div>
         
         {/* Escritorio (Sin cambios) */}
@@ -1326,7 +1326,7 @@ const Footer = () => (
     <div className="max-w-7xl mx-auto">
       <div className="grid lg:grid-cols-2 gap-16 pb-20 border-b border-white/5">
         <div className="space-y-8 text-left">
-          <div className="text-4xl font-black tracking-tighter italic">VERZING<span className="text-amber-600">.</span></div>
+          <div className="text-4xl font-black tracking-tighter italic">VERZING<span className="text-amber-600">.CO</span></div>
           <p className="text-zinc-400 max-w-sm text-sm leading-relaxed font-medium">Nacidos en el asfalto, curados para la autenticidad. No vendemos solo calzado, entregamos la confianza para caminar tu propia verdad.</p>
           <div className="flex space-x-6">
             <a href="https://www.instagram.com/verzing.co/" target="_blank" rel="noopener noreferrer" aria-label="Instagram" className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-white hover:text-black transition-all cursor-pointer"><Instagram size={16} /></a>
