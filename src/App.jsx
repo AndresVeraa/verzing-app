@@ -23,16 +23,7 @@ import {
   Sparkles,
   Menu
 } from 'lucide-react';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Tooltip,
-  Filler,
-} from 'chart.js';
-import { Line } from 'react-chartjs-2';
+
 import { db, firebaseConfigured } from './firebase';
 import { collection, query, orderBy, onSnapshot, addDoc, setDoc, deleteDoc, doc, serverTimestamp, getDoc } from 'firebase/firestore';
 import AboutUs from './AboutUs';
@@ -92,8 +83,7 @@ const DEFAULT_PRODUCTS = [
   }
 ];
 
-// Registrar Chart.js
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler);
+
 
 // --- CONFIGURACIÓN ---
 const apiKey = ""; // La clave se proporciona en el entorno de ejecución
@@ -1570,18 +1560,18 @@ const ProductModal = ({ product, onClose }) => {
     const whatsappUrl = `https://wa.me/${phone}?text=${encodedMessage}`;
     const w = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
     if (!w) window.location.href = whatsappUrl;
-  }; 
+  };
 
-  const chartData = {
-    labels: ['W1', 'W2', 'W3', 'W4', 'W5', 'Ahora'],
-    datasets: [{
-      data: product.popularity || [40, 50, 60, 45, 70, 90],
-      borderColor: '#D97706',
-      backgroundColor: 'rgba(217, 119, 6, 0.1)',
-      fill: true,
-      tension: 0.4,
-      pointRadius: 0
-    }]
+  // Calcular nivel de hype dinámico basado en popularity o valor aleatorio
+  const hypeLevel = product.popularity 
+    ? Math.round(product.popularity.reduce((a, b) => a + b, 0) / product.popularity.length)
+    : Math.floor(Math.random() * 25) + 75;
+
+  const getHypeMessage = (level) => {
+    if (level >= 90) return "¡Producto ultra solicitado! Se agota muy rápido.";
+    if (level >= 75) return "Alta demanda. Disponibilidad limitada.";
+    if (level >= 60) return "Producto popular entre coleccionistas.";
+    return "Tendencia al alza. ¡Aprovecha ahora!";
   };
 
   return (
@@ -1612,15 +1602,63 @@ const ProductModal = ({ product, onClose }) => {
           <span className="text-amber-600 font-bold text-[9px] sm:text-[10px] uppercase tracking-[0.2em] sm:tracking-[0.3em] mb-2 sm:mb-4">{product.vibe} Collection</span>
           <h2 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tighter mb-2 leading-none uppercase">{product.name}</h2>
           {product.isPromo && product.promoPrice ? (
-            <div className="mb-4 sm:mb-8">
+            <div className="mb-4 sm:mb-6">
               <p className="text-xl sm:text-2xl font-black mb-1 text-amber-600">$ {Number(product.promoPrice).toLocaleString('es-CO')}</p>
               <p className="text-xs sm:text-sm text-neutral-400 line-through">$ {Number(product.price).toLocaleString('es-CO')}</p>
             </div>
           ) : (
-            <p className="text-xl sm:text-2xl font-bold mb-4 sm:mb-8">$ {Number(product.price).toLocaleString('es-CO')}</p>
+            <p className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">$ {Number(product.price).toLocaleString('es-CO')}</p>
           )}
 
-          <div className="mb-4 sm:mb-8 p-4 sm:p-6 bg-amber-50 rounded-2xl sm:rounded-3xl border border-amber-100">
+          {/* Tallas - ahora debajo del precio */}
+          <div className="mb-4 sm:mb-6">
+            <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-neutral-400 mb-3 sm:mb-4">Tallas EU</p>
+            <div className="grid grid-cols-5 gap-2 sm:gap-3">
+              {product.sizes.map(size => (
+                <button key={size} onClick={() => setSelectedSize(size)} className={`py-2.5 sm:py-4 text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl border-2 transition-all ${selectedSize === size ? 'border-black bg-black text-white' : 'border-neutral-100 hover:border-black'}`}>{size}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Botón de WhatsApp - ahora debajo de las tallas */}
+          <button 
+            onClick={handleWhatsAppChat}
+            disabled={!selectedSize}
+            className={`w-full py-4 sm:py-6 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] transition-all mb-4 sm:mb-8 ${
+              selectedSize 
+              ? 'bg-black text-white hover:bg-amber-600 shadow-xl' 
+              : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+            }`}
+          >
+            {selectedSize ? 'Consultar por WhatsApp' : 'Selecciona una talla'}
+          </button>
+
+          {/* Sección de Tendencia - Nivel de Hype */}
+          <div className="mb-4 sm:mb-8 bg-orange-50 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-orange-200">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-2xl sm:text-3xl animate-bounce">🔥</span>
+              <div className="flex-1">
+                <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-orange-800">Nivel de Hype</p>
+                <p className="text-[10px] sm:text-xs text-orange-600 font-medium mt-0.5">{getHypeMessage(hypeLevel)}</p>
+              </div>
+              <div className="text-right">
+                <span className="text-2xl sm:text-3xl font-black text-orange-600">{hypeLevel}%</span>
+              </div>
+            </div>
+            {/* Barra de progreso */}
+            <div className="w-full bg-orange-200 rounded-full h-2.5 sm:h-3 overflow-hidden">
+              <div 
+                className="h-full bg-gradient-to-r from-orange-400 via-orange-500 to-red-500 rounded-full transition-all duration-700"
+                style={{ width: `${hypeLevel}%` }}
+              />
+            </div>
+            <p className="text-[8px] sm:text-[9px] text-orange-700 font-bold uppercase tracking-wider mt-2 sm:mt-3 text-center">
+              ⚠️ Este producto es muy solicitado — ¡No esperes más!
+            </p>
+          </div>
+
+          {/* Conserje de Estilo AI - de último */}
+          <div className="p-4 sm:p-6 bg-amber-50 rounded-2xl sm:rounded-3xl border border-amber-100">
             <h3 className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-amber-800 mb-2 sm:mb-3 flex items-center gap-2">
               <Sparkles size={10} className="animate-pulse sm:hidden" />
               <Sparkles size={12} className="animate-pulse hidden sm:block" /> Conserje de Estilo AI
@@ -1632,31 +1670,6 @@ const ProductModal = ({ product, onClose }) => {
               <button onClick={handleGetStyleAdvice} className="bg-amber-600 text-white px-4 sm:px-6 py-1.5 sm:py-2 rounded-full text-[8px] sm:text-[9px] font-bold uppercase tracking-widest hover:bg-amber-700 transition-all">Generar Consejos ✨</button>
             )}
           </div>
-
-          <div className="mb-4 sm:mb-8 bg-neutral-50 p-4 sm:p-6 rounded-2xl sm:rounded-3xl h-[90px] sm:h-[120px]">
-             <p className="text-[7px] sm:text-[8px] font-black uppercase tracking-widest text-neutral-400 mb-1 sm:mb-2">Demanda en Tiempo Real</p>
-             <Line data={chartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { display: false } } }} />
-          </div>
-
-          <div className="mb-4 sm:mb-8">
-            <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-neutral-400 mb-3 sm:mb-4">Tallas EU</p>
-            <div className="grid grid-cols-5 gap-2 sm:gap-3">
-              {product.sizes.map(size => (
-                <button key={size} onClick={() => setSelectedSize(size)} className={`py-2.5 sm:py-4 text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl border-2 transition-all ${selectedSize === size ? 'border-black bg-black text-white' : 'border-neutral-100 hover:border-black'}`}>{size}</button>
-              ))}
-            </div>
-          </div>
-          <button 
-            onClick={handleWhatsAppChat}
-            disabled={!selectedSize}
-            className={`w-full py-4 sm:py-6 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] transition-all ${
-              selectedSize 
-              ? 'bg-black text-white hover:bg-amber-600 shadow-xl' 
-              : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
-            }`}
-          >
-            {selectedSize ? 'Consultar por WhatsApp' : 'Selecciona una talla'}
-          </button>
         </div>
       </div>
     </div>
