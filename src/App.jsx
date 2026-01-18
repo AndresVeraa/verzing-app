@@ -444,11 +444,13 @@ const LoginModal = ({ isOpen, onClose, onLogin }) => {
   );
 };
 
-const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProduct, deleteProduct, usingFirestore, migrateProductsToFirestore, cmsTextos, setCmsTextos }) => {
+const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProduct, deleteProduct, usingFirestore, migrateProductsToFirestore, cmsTextos, setCmsTextos, heroImage, setHeroImage, handleUpdateHero }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [adminTab, setAdminTab] = useState('inventario'); // 'inventario' | 'diseno'
   const [designData, setDesignData] = useState(() => cmsTextos || DEFAULT_TEXTOS);
+  const [heroImagePreview, setHeroImagePreview] = useState(heroImage || '');
+  const [isUploadingHero, setIsUploadingHero] = useState(false);
     const [formData, setFormData] = useState({ name: '', price: '', vibe: 'Streetwear', sizes: [], gender: 'Unisex', brand: 'Nike', imagesDataUrls: [], isPromo: false, promoPrice: '', promoUntil: '' });
 
     // Sync designData when cmsTextos changes
@@ -633,6 +635,79 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
               <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tighter">Configuración de Diseño</h2>
               <p className="text-[10px] sm:text-xs text-neutral-400 mt-1">Edita los textos del Hero y la sección Sobre Nosotros</p>
             </div>
+
+            {/* IMAGEN DEL HERO - AL INICIO */}
+            <div className="mb-6 sm:mb-8 p-4 sm:p-6 bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl border-2 border-amber-100">
+              <label className="text-[10px] sm:text-xs font-black uppercase text-amber-700 mb-3 block flex items-center gap-2">
+                🖼️ Imagen del Hero Principal
+              </label>
+              <p className="text-[10px] text-neutral-500 mb-4">Esta imagen se mostrará en la sección principal de la página de inicio. Se recomienda una imagen de alta calidad.</p>
+              <input 
+                type="file" 
+                accept="image/*" 
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setIsUploadingHero(true);
+                  try {
+                    // Usar handleUpdateHero pasado desde App
+                    const success = await handleUpdateHero(file);
+                    if (success) {
+                      // Leer archivo para preview local inmediato
+                      const reader = new FileReader();
+                      reader.onloadend = () => {
+                        setHeroImagePreview(reader.result);
+                      };
+                      reader.readAsDataURL(file);
+                      onNotify && onNotify('✅ Imagen del Hero actualizada');
+                    } else {
+                      onNotify && onNotify('❌ Error al subir imagen');
+                    }
+                  } catch (err) {
+                    console.error('Error uploading hero image:', err);
+                    onNotify && onNotify('❌ Error al subir imagen');
+                  } finally {
+                    setIsUploadingHero(false);
+                  }
+                }} 
+                className="w-full text-sm mb-3 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-black file:uppercase file:bg-amber-600 file:text-white hover:file:bg-amber-700 file:cursor-pointer file:transition-colors" 
+                disabled={isUploadingHero}
+              />
+              {isUploadingHero && (
+                <div className="flex items-center gap-2 text-amber-600 text-xs font-bold mb-3">
+                  <div className="w-4 h-4 border-2 border-amber-600 border-t-transparent rounded-full animate-spin"></div>
+                  Procesando imagen...
+                </div>
+              )}
+              {(heroImagePreview || heroImage) && (
+                <div className="mt-4 relative inline-block">
+                  <img 
+                    src={heroImagePreview || heroImage} 
+                    alt="Hero Preview" 
+                    className="w-48 sm:w-64 h-auto max-h-48 object-contain rounded-xl shadow-lg transition-all duration-500" 
+                  />
+                  <button 
+                    type="button" 
+                    onClick={async () => {
+                      const defaultImg = 'https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&q=80&w=1000';
+                      setHeroImagePreview(defaultImg);
+                      setHeroImage(defaultImg);
+                      if (usingFirestore) {
+                        await setDoc(doc(db, 'configuracion', 'hero'), { imageUrl: defaultImg, updatedAt: new Date().toISOString() }, { merge: true });
+                      } else {
+                        localStorage.setItem('verzing_hero_image', defaultImg);
+                      }
+                      onNotify && onNotify('Imagen del Hero restaurada');
+                    }} 
+                    className="absolute -top-2 -right-2 bg-rose-500 text-white rounded-full p-1.5 hover:bg-rose-600 transition-colors shadow-lg"
+                    title="Restaurar imagen por defecto"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
               <div className="space-y-3 sm:space-y-4">
                 <div>
@@ -669,6 +744,7 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
                   <label className="text-[9px] sm:text-[10px] font-black uppercase text-neutral-400 mb-1.5 sm:mb-2 block">Métodos de Pago</label>
                   <input value={designData.paymentMethods || ''} onChange={e => setDesignData(prev => ({ ...prev, paymentMethods: e.target.value }))} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-neutral-200 focus:border-amber-600 outline-none text-sm" />
                 </div>
+
                 <div>
                   <label className="text-[9px] sm:text-[10px] font-black uppercase text-neutral-400 mb-1.5 sm:mb-2 block">Imagen de Diseño (opcional, máx 1MB)</label>
                   <input type="file" accept="image/*" onChange={handleDesignImageUpload} className="w-full text-sm" />
@@ -1200,8 +1276,25 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
   );
 };
 
-const Hero = ({ onOpenAssistant, cmsTextos }) => {
+// Skeleton de carga para el Hero
+const HeroSkeleton = () => (
+  <div className="animate-pulse">
+    {/* Mobile skeleton */}
+    <div className="md:hidden w-11/12 mx-auto bg-white p-2 rounded-2xl shadow-2xl">
+      <div className="aspect-[4/5] bg-neutral-200 rounded-xl"></div>
+    </div>
+    {/* Desktop skeleton */}
+    <div className="hidden md:block w-full bg-white p-2 rounded-[3rem] shadow-2xl">
+      <div className="aspect-[4/5] bg-neutral-200 rounded-[2.5rem]"></div>
+    </div>
+  </div>
+);
+
+const Hero = ({ onOpenAssistant, cmsTextos, heroImage, isLoadingHero }) => {
   const { dropText, titleMain, subtitle } = cmsTextos || DEFAULT_TEXTOS;
+  
+  // Si no hay imagen o está cargando, mostrar skeleton
+  const showSkeleton = !heroImage || isLoadingHero;
   
   return (
   <section className="relative min-h-screen flex items-center pt-24 sm:pt-20 px-6 bg-[#FDFCFB] overflow-hidden">
@@ -1238,20 +1331,32 @@ const Hero = ({ onOpenAssistant, cmsTextos }) => {
 
         {/* Small-screen hero image */}
         <div className="md:hidden mt-8 w-full flex justify-center">
-          <div className="w-11/12 aspect-[3/2] rounded-2xl overflow-hidden shadow-2xl">
-            <img src="https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&q=80&w=1000" alt="Verzing" className="w-full h-full object-cover" />
-          </div>
+          {showSkeleton ? (
+            <div className="w-11/12 bg-white p-2 rounded-2xl shadow-2xl animate-pulse">
+              <div className="aspect-[4/5] bg-neutral-200 rounded-xl"></div>
+            </div>
+          ) : (
+            <div className="w-11/12 bg-white p-2 rounded-2xl shadow-2xl animate-in fade-in duration-700">
+              <img src={heroImage} alt="Verzing" className="w-full h-auto object-contain rounded-xl transition-all duration-700 ease-out" />
+            </div>
+          )}
         </div> 
       </div>
       <div className="relative hidden md:flex items-center justify-center">
-        <div className="w-full aspect-square relative rounded-[3rem] overflow-hidden shadow-2xl">
-          <img 
-            src="https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&q=80&w=1000" 
-            alt="Verzing Sneakers Hero" 
-            className="w-full h-full object-cover"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
-        </div>
+        {showSkeleton ? (
+          <div className="w-full bg-white p-2 rounded-[3rem] shadow-2xl animate-pulse">
+            <div className="aspect-[4/5] bg-neutral-200 rounded-[2.5rem]"></div>
+          </div>
+        ) : (
+          <div className="w-full relative bg-white p-2 rounded-[3rem] shadow-2xl animate-in fade-in duration-700">
+            <img 
+              src={heroImage} 
+              alt="Verzing Sneakers Hero" 
+              className="w-full h-auto object-contain rounded-[2.5rem] transition-all duration-700 ease-out"
+            />
+            <div className="absolute inset-2 bg-gradient-to-t from-black/10 to-transparent rounded-[2.5rem] pointer-events-none"></div>
+          </div>
+        )}
       </div>
     </div>
   </section>
@@ -1289,14 +1394,41 @@ const ProductCard = ({ product, onClick }) => (
   </div>
 );
 
-// Skeleton de carga para productos
+// Skeleton de carga para productos del catálogo
 const ProductSkeleton = () => (
   <div className="group animate-pulse">
-    <div className="aspect-square rounded-3xl bg-neutral-200"></div>
-    <div className="mt-4 space-y-2">
-      <div className="h-3 bg-neutral-200 rounded w-1/3"></div>
-      <div className="h-5 bg-neutral-200 rounded w-3/4"></div>
-      <div className="h-4 bg-neutral-200 rounded w-1/2"></div>
+    <div className="aspect-[4/5] bg-neutral-200 rounded-[2rem] sm:rounded-[2.5rem] mb-4"></div>
+    <div className="flex justify-between items-start px-1">
+      <div className="space-y-2 flex-1">
+        <div className="h-4 sm:h-5 bg-neutral-200 rounded-lg w-3/4"></div>
+        <div className="h-3 bg-neutral-200 rounded w-1/2"></div>
+      </div>
+      <div className="h-4 sm:h-5 bg-neutral-200 rounded-lg w-20 ml-2"></div>
+    </div>
+  </div>
+);
+
+// Skeleton de carga para promociones
+const PromoSkeleton = () => (
+  <div className="animate-pulse bg-zinc-900 rounded-2xl sm:rounded-[2.5rem] p-3 sm:p-4 border border-white/5">
+    <div className="aspect-square rounded-xl sm:rounded-[2rem] bg-zinc-800 mb-4 sm:mb-6 relative overflow-hidden">
+      <div className="absolute top-3 right-3 sm:top-4 sm:right-4 bg-zinc-700 w-12 h-6 rounded-full"></div>
+    </div>
+    <div className="px-2 sm:px-4 pb-2 sm:pb-4 space-y-3">
+      <div className="h-5 sm:h-6 bg-zinc-800 rounded-lg w-3/4"></div>
+      <div className="flex items-center gap-2 sm:gap-4">
+        <div className="h-6 sm:h-8 bg-zinc-800 rounded-lg w-24"></div>
+        <div className="h-4 bg-zinc-800 rounded w-16"></div>
+      </div>
+      <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-white/5 flex items-center justify-between">
+        <div className="h-3 bg-zinc-800 rounded w-20"></div>
+        <div className="flex gap-1 sm:gap-2">
+          <div className="bg-zinc-800 w-8 h-6 rounded"></div>
+          <div className="bg-zinc-800 w-8 h-6 rounded"></div>
+          <div className="bg-zinc-800 w-8 h-6 rounded"></div>
+          <div className="bg-zinc-800 w-8 h-6 rounded"></div>
+        </div>
+      </div>
     </div>
   </div>
 );
@@ -1369,13 +1501,15 @@ const CatalogSection = ({ products, onProductClick, activeBrand, setActiveBrand,
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
           {isLoading ? (
             // Mostrar 6 skeletons mientras carga
-            [...Array(6)].map((_, i) => <ProductSkeleton key={i} />)
+            [...Array(6)].map((_, i) => <ProductSkeleton key={`skeleton-${i}`} />)
           ) : filteredProducts.length > 0 ? (
             filteredProducts.map((p) => (
-              <ProductCard key={p.id} product={p} onClick={onProductClick} />
+              <div key={p.id} className="animate-in fade-in duration-500">
+                <ProductCard product={p} onClick={onProductClick} />
+              </div>
             ))
           ) : (
-            <div className="col-span-full text-center py-16">
+            <div className="col-span-full text-center py-16 animate-in fade-in duration-300">
               <p className="text-neutral-400 font-bold text-sm">No hay productos con estos filtros</p>
             </div>
           )}
@@ -1569,9 +1703,11 @@ const AIAssistant = ({ isOpen, onClose, products }) => {
   );
 };
 
-const PromoSection = ({ products, onProductClick }) => {
+const PromoSection = ({ products, onProductClick, isLoading }) => {
   const promoProducts = products.filter(p => p.isPromo && p.promoUntil && new Date(p.promoUntil) > new Date());
-  if (promoProducts.length === 0) return null;
+  
+  // Si está cargando, mostrar skeletons. Si no hay promos después de cargar, no mostrar nada.
+  if (!isLoading && promoProducts.length === 0) return null;
 
   const PromoCard = ({ p }) => {
     const [now, setNow] = useState(Date.now());
@@ -1630,9 +1766,16 @@ const PromoSection = ({ products, onProductClick }) => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-8">
-          {promoProducts.map(p => (
-            <PromoCard key={p.id} p={p} />
-          ))}
+          {isLoading ? (
+            // Mostrar 3 skeletons mientras carga
+            [...Array(3)].map((_, i) => <PromoSkeleton key={`promo-skeleton-${i}`} />)
+          ) : (
+            promoProducts.map(p => (
+              <div key={p.id} className="animate-in fade-in duration-500">
+                <PromoCard p={p} />
+              </div>
+            ))
+          )}
         </div>
       </div>
     </section>
@@ -1904,9 +2047,79 @@ export default function App() {
   const [isHeaderSticky, setIsHeaderSticky] = useState(false);
   const [activeTab, setActiveTab] = useState('shop');
   const [isLoading, setIsLoading] = useState(true); // Estado de carga para productos
+  const [isLoadingHero, setIsLoadingHero] = useState(true); // Estado de carga para imagen del Hero
 
   // CMS texts loaded from Firestore (or defaults)
   const [cmsTextos, setCmsTextos] = useState(DEFAULT_TEXTOS);
+  
+  // Hero image URL (editable desde AdminPanel) - Inicializado como null hasta verificar storage
+  const DEFAULT_HERO_IMAGE = 'https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&q=80&w=1000';
+  const [heroImage, setHeroImage] = useState(null);
+
+  // Cargar heroImage desde localStorage o Firestore al montar
+  useEffect(() => {
+    const loadHeroImage = async () => {
+      setIsLoadingHero(true);
+      try {
+        // Primero verificar localStorage
+        const savedLocal = localStorage.getItem('verzing_hero_image');
+        if (savedLocal) {
+          setHeroImage(savedLocal);
+          setIsLoadingHero(false);
+          return;
+        }
+        
+        // Si no hay en localStorage, verificar Firestore
+        if (usingFirestore) {
+          const heroRef = doc(db, 'configuracion', 'hero');
+          const snap = await getDoc(heroRef);
+          if (snap && snap.exists() && snap.data().imageUrl) {
+            const firestoreImage = snap.data().imageUrl;
+            setHeroImage(firestoreImage);
+            // Guardar en localStorage para próximas cargas
+            localStorage.setItem('verzing_hero_image', firestoreImage);
+            setIsLoadingHero(false);
+            return;
+          }
+        }
+        
+        // Si no hay en ningún storage, usar imagen por defecto
+        setHeroImage(DEFAULT_HERO_IMAGE);
+      } catch (err) {
+        console.error('Error loading hero image:', err);
+        setHeroImage(DEFAULT_HERO_IMAGE);
+      } finally {
+        setIsLoadingHero(false);
+      }
+    };
+    loadHeroImage();
+  }, [usingFirestore]);
+
+  // Función para actualizar heroImage desde AdminPanel usando FileReader
+  const handleUpdateHero = async (file) => {
+    if (!file) return;
+    setIsLoadingHero(true); // Activar estado de carga
+    try {
+      // Comprimir imagen antes de guardar
+      const dataUrl = await compressImageFile(file, 1.5);
+      setHeroImage(dataUrl);
+      localStorage.setItem('verzing_hero_image', dataUrl);
+      
+      // Si usa Firestore, también guardar allá
+      if (usingFirestore) {
+        await setDoc(doc(db, 'configuracion', 'hero'), { 
+          imageUrl: dataUrl, 
+          updatedAt: new Date().toISOString() 
+        }, { merge: true });
+      }
+      setIsLoadingHero(false); // Desactivar estado de carga
+      return true;
+    } catch (err) {
+      console.error('Error updating hero image:', err);
+      setIsLoadingHero(false); // Desactivar en caso de error
+      return false;
+    }
+  };
 
   // Seed admin user on first run
   useEffect(() => { seedAdmin(); }, []);
@@ -1921,13 +2134,23 @@ export default function App() {
           const snap = await getDoc(cfgRef);
           if (snap && snap.exists()) {
             mounted && setCmsTextos({ ...DEFAULT_TEXTOS, ...snap.data() });
-            return;
           }
+          // Cargar heroImage desde documento 'hero'
+          const heroRef = doc(db, 'configuracion', 'hero');
+          const heroSnap = await getDoc(heroRef);
+          if (heroSnap && heroSnap.exists() && heroSnap.data().imageUrl) {
+            mounted && setHeroImage(heroSnap.data().imageUrl);
+          }
+          return;
         }
         // fallback: try localStorage
         const saved = localStorage.getItem('verzing_textos');
         if (saved) {
           mounted && setCmsTextos({ ...DEFAULT_TEXTOS, ...JSON.parse(saved) });
+        }
+        const savedHero = localStorage.getItem('verzing_hero_image');
+        if (savedHero) {
+          mounted && setHeroImage(savedHero);
         }
       } catch (err) {
         console.warn('Error loading textos_web:', err);
@@ -2259,13 +2482,13 @@ export default function App() {
 
       {activeTab === 'shop' && (
         <>
-          <Hero onOpenAssistant={() => setIsAssistantOpen(true)} userRole={userRole} cmsTextos={cmsTextos} />
+          <Hero onOpenAssistant={() => setIsAssistantOpen(true)} userRole={userRole} cmsTextos={cmsTextos} heroImage={heroImage} isLoadingHero={isLoadingHero} />
 
           {/* Sección de Promociones */}
-          <PromoSection products={products} onProductClick={setSelectedProduct} />
+          <PromoSection products={products} onProductClick={setSelectedProduct} isLoading={isLoading} />
 
           {userRole === 'admin' && (
-            <AdminPanel products={products} setProducts={setProducts} onNotify={(msg) => handleNotify(msg)} createProduct={createProduct} updateProduct={updateProduct} deleteProduct={deleteProduct} usingFirestore={usingFirestore} migrateProductsToFirestore={migrateProductsToFirestore} cmsTextos={cmsTextos} setCmsTextos={setCmsTextos} />
+            <AdminPanel products={products} setProducts={setProducts} onNotify={(msg) => handleNotify(msg)} createProduct={createProduct} updateProduct={updateProduct} deleteProduct={deleteProduct} usingFirestore={usingFirestore} migrateProductsToFirestore={migrateProductsToFirestore} cmsTextos={cmsTextos} setCmsTextos={setCmsTextos} heroImage={heroImage} setHeroImage={setHeroImage} handleUpdateHero={handleUpdateHero} />
           )}
 
           <CatalogSection 
