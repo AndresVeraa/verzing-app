@@ -1020,11 +1020,14 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
   const navigateTo = (tab, scrollId = null) => {
     setActiveTab && setActiveTab(tab);
     setMobileMenuOpen(false);
-    if (scrollId) {
-      setTimeout(() => {
+    // Hacer scroll al elemento específico o al top de la página
+    setTimeout(() => {
+      if (scrollId) {
         document.getElementById(scrollId)?.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
-    }
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }, 50);
   };
 
   return (
@@ -1066,7 +1069,7 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
               <Sparkles size={14} className="text-amber-600" /> Asistente AI
             </button>
             <button 
-              onClick={() => setActiveTab('sizes')}
+              onClick={() => navigateTo('sizes')}
               className={`text-[10px] font-black uppercase tracking-[0.2em] px-4 py-2 rounded-xl transition-all ${activeTab === 'sizes' ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/30' : 'text-neutral-700 hover:text-amber-600'}`}
             >
               Guía de Tallas
@@ -1153,31 +1156,21 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
 
           <div className="space-y-3 flex-1">
             <button 
-              onClick={() => {
-                setActiveTab('shop');
-                setMobileMenuOpen(false);
-                document.getElementById('catalog')?.scrollIntoView({ behavior: 'smooth' });
-              }}
+              onClick={() => navigateTo('shop', 'catalog')}
               className={`w-full flex items-center justify-between p-5 rounded-2xl text-sm font-black uppercase tracking-[0.15em] transition-all ${activeTab === 'shop' ? 'bg-black text-white' : 'bg-neutral-50 text-neutral-800 active:bg-neutral-100'}`}
             >
               Drops <TrendingUp size={18} />
             </button>
 
             <button 
-              onClick={() => {
-                setActiveTab('about');
-                setMobileMenuOpen(false);
-              }}
+              onClick={() => navigateTo('about')}
               className={`w-full flex items-center justify-between p-5 rounded-2xl text-sm font-black uppercase tracking-[0.15em] transition-all ${activeTab === 'about' ? 'bg-amber-600 text-white' : 'bg-neutral-50 text-neutral-800 active:bg-neutral-100'}`}
             >
               Sobre Nosotros <User size={18} />
             </button>
 
             <button 
-              onClick={() => {
-                setActiveTab('sizes');
-                setMobileMenuOpen(false);
-              }}
+              onClick={() => navigateTo('sizes')}
               className={`w-full flex items-center justify-between p-5 rounded-2xl text-sm font-black uppercase tracking-[0.15em] transition-all ${activeTab === 'sizes' ? 'bg-amber-600 text-white' : 'bg-neutral-50 text-neutral-800 active:bg-neutral-100'}`}
             >
               Guía de Tallas <Maximize2 size={18} />
@@ -1220,10 +1213,7 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
           <div className="flex items-center justify-around py-2 relative">
             {/* Drops */}
             <button 
-              onClick={() => {
-                setActiveTab('shop');
-                document.getElementById('catalog')?.scrollIntoView({ behavior: 'smooth' });
-              }}
+              onClick={() => navigateTo('shop', 'catalog')}
               className={`flex flex-col items-center py-2 px-4 rounded-xl transition-all ${activeTab === 'shop' ? 'text-amber-500' : 'text-white/70'}`}
             >
               <TrendingUp size={20} />
@@ -1232,7 +1222,7 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
 
             {/* Tallas */}
             <button 
-              onClick={() => setActiveTab('sizes')}
+              onClick={() => navigateTo('sizes')}
               className={`flex flex-col items-center py-2 px-4 rounded-xl transition-all ${activeTab === 'sizes' ? 'text-amber-500' : 'text-white/70'}`}
             >
               <Maximize2 size={20} />
@@ -1254,7 +1244,7 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
 
             {/* About */}
             <button 
-              onClick={() => setActiveTab('about')}
+              onClick={() => navigateTo('about')}
               className={`flex flex-col items-center py-2 px-4 rounded-xl transition-all ${activeTab === 'about' ? 'text-amber-500' : 'text-white/70'}`}
             >
               <User size={20} />
