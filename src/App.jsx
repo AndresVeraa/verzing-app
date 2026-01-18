@@ -994,7 +994,7 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
   );
 };
 
-const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogout, onOpenLogin, usingFirestore, activeTab, setActiveTab }) => {
+const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogout, onOpenLogin, usingFirestore, activeTab, setActiveTab, onOpenCart }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
 
@@ -1068,12 +1068,12 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
 
           {/* Desktop Right Section */}
           <div className="hidden md:flex items-center space-x-4">
-            <div className="relative cursor-pointer p-2 hover:bg-neutral-100 rounded-full transition-colors">
+            <button onClick={onOpenCart} className="relative cursor-pointer p-2 hover:bg-neutral-100 rounded-full transition-colors">
               <ShoppingCart size={18} />
               {wishlistCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-amber-600 text-white text-[8px] rounded-full w-5 h-5 flex items-center justify-center font-black">{wishlistCount}</span>
               )}
-            </div>
+            </button>
 
             {userRole ? (
               <div className="flex items-center gap-3">
@@ -1097,12 +1097,12 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
 
           {/* Mobile: Solo carrito y hamburguesa */}
           <div className="flex md:hidden items-center gap-3">
-            <div className="relative cursor-pointer p-2">
+            <button onClick={onOpenCart} className="relative cursor-pointer p-2">
               <ShoppingCart size={18} />
               {wishlistCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-amber-600 text-white text-[7px] rounded-full w-4 h-4 flex items-center justify-center font-black">{wishlistCount}</span>
               )}
-            </div>
+            </button>
             
             {/* Login/Logout circular en móvil */}
             {userRole ? (
@@ -1528,14 +1528,16 @@ const CatalogSection = ({ products, onProductClick, activeBrand, setActiveBrand,
   );
 };
 
-const ProductModal = ({ product, onClose }) => {
+const ProductModal = ({ product, onClose, addToCart, currentUser, onOpenLogin }) => {
   const [selectedSize, setSelectedSize] = useState(null);
   const [aiAdvice, setAiAdvice] = useState(null);
   const [loadingAI, setLoadingAI] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [addedToCart, setAddedToCart] = useState(false);
 
   useEffect(() => {
     setActiveImageIndex(0);
+    setAddedToCart(false);
   }, [product]);
 
   if (!product) return null;
@@ -1547,6 +1549,19 @@ const ProductModal = ({ product, onClose }) => {
     const response = await callGemini(prompt, system);
     setAiAdvice(response);
     setLoadingAI(false);
+  };
+
+  const handleAddToCart = () => {
+    if (!selectedSize) {
+      alert('Por favor, selecciona una talla primero.');
+      return;
+    }
+
+    const success = addToCart(product, selectedSize);
+    if (success) {
+      setAddedToCart(true);
+      setTimeout(() => setAddedToCart(false), 2000);
+    }
   };
 
   const handleWhatsAppChat = () => {
@@ -1620,18 +1635,35 @@ const ProductModal = ({ product, onClose }) => {
             </div>
           </div>
 
-          {/* Botón de WhatsApp - ahora debajo de las tallas */}
-          <button 
-            onClick={handleWhatsAppChat}
-            disabled={!selectedSize}
-            className={`w-full py-4 sm:py-6 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] transition-all mb-4 sm:mb-8 ${
-              selectedSize 
-              ? 'bg-black text-white hover:bg-amber-600 shadow-xl' 
-              : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
-            }`}
-          >
-            {selectedSize ? 'Consultar por WhatsApp' : 'Selecciona una talla'}
-          </button>
+          {/* Botones de acción */}
+          <div className="flex gap-3 mb-4 sm:mb-8">
+            <button 
+              onClick={handleAddToCart}
+              disabled={!selectedSize}
+              className={`flex-1 py-4 sm:py-5 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-[0.15em] sm:tracking-[0.2em] transition-all flex items-center justify-center gap-2 ${
+                addedToCart
+                ? 'bg-green-500 text-white'
+                : selectedSize 
+                  ? 'bg-black text-white hover:bg-amber-600 shadow-xl' 
+                  : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+              }`}
+            >
+              <ShoppingCart size={16} />
+              {addedToCart ? '¡Añadido!' : (selectedSize ? 'Añadir al Carrito' : 'Selecciona talla')}
+            </button>
+            <button 
+              onClick={handleWhatsAppChat}
+              disabled={!selectedSize}
+              className={`px-4 sm:px-6 py-4 sm:py-5 rounded-xl sm:rounded-2xl transition-all ${
+                selectedSize 
+                ? 'bg-green-500 text-white hover:bg-green-600' 
+                : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+              }`}
+              title="Consultar por WhatsApp"
+            >
+              <MessageCircle size={18} />
+            </button>
+          </div>
 
           {/* Sección de Tendencia - Nivel de Hype */}
           <div className="mb-4 sm:mb-8 bg-orange-50 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-orange-200">
@@ -1671,6 +1703,118 @@ const ProductModal = ({ product, onClose }) => {
             )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+};
+
+// --- CART DRAWER ---
+const CartDrawer = ({ isOpen, onClose, cart, removeFromCart, currentUser }) => {
+  if (!isOpen) return null;
+
+  const total = cart.reduce((sum, item) => {
+    const price = item.isPromo && item.promoPrice ? item.promoPrice : item.price;
+    return sum + Number(price);
+  }, 0);
+
+  const handleCheckoutWhatsApp = () => {
+    if (cart.length === 0) {
+      alert('Tu carrito está vacío');
+      return;
+    }
+
+    const phone = (WHATSAPP_NUMBER || '').toString().replace(/\D/g, '');
+    if (!phone) {
+      alert('Número de WhatsApp no configurado');
+      return;
+    }
+
+    // Construir mensaje detallado
+    let message = `¡Hola Verzing! 👋\n\nQuiero finalizar mi compra:\n\n`;
+    
+    cart.forEach((item, index) => {
+      const price = item.isPromo && item.promoPrice ? item.promoPrice : item.price;
+      message += `${index + 1}. *${item.name}*\n`;
+      message += `   Talla: ${item.selectedSize}\n`;
+      message += `   Precio: $${Number(price).toLocaleString('es-CO')}\n\n`;
+    });
+
+    message += `-------------------\n`;
+    message += `*TOTAL: $${total.toLocaleString('es-CO')}*\n\n`;
+    message += `👤 Cliente: ${currentUser || 'No registrado'}\n`;
+    message += `¿Está disponible mi pedido?`;
+
+    const encodedMessage = encodeURIComponent(message);
+    const whatsappUrl = `https://wa.me/${phone}?text=${encodedMessage}`;
+    const w = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+    if (!w) window.location.href = whatsappUrl;
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex justify-end">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
+      <div className="relative bg-white w-full max-w-md h-full shadow-2xl animate-in slide-in-from-right duration-300 flex flex-col">
+        {/* Header */}
+        <div className="p-6 border-b border-neutral-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-black uppercase tracking-tighter">Tu Carrito</h2>
+            <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-widest">{cart.length} {cart.length === 1 ? 'producto' : 'productos'}</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-neutral-100 rounded-full transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Cart Items */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {cart.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-center py-12">
+              <ShoppingCart size={48} className="text-neutral-200 mb-4" />
+              <p className="text-neutral-400 font-bold uppercase text-xs tracking-widest">Tu carrito está vacío</p>
+              <p className="text-neutral-300 text-[10px] mt-2">Explora nuestro catálogo y añade productos</p>
+            </div>
+          ) : (
+            cart.map((item, index) => {
+              const price = item.isPromo && item.promoPrice ? item.promoPrice : item.price;
+              return (
+                <div key={`${item.id}-${item.selectedSize}-${index}`} className="flex gap-4 p-4 bg-neutral-50 rounded-2xl group hover:bg-neutral-100 transition-colors">
+                  <div className="w-20 h-20 bg-white rounded-xl overflow-hidden flex-shrink-0">
+                    <img src={Array.isArray(item.image) ? item.image[0] : item.image} alt={item.name} className="w-full h-full object-cover" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-sm truncate uppercase">{item.name}</h4>
+                    <p className="text-[9px] text-neutral-400 font-bold uppercase tracking-widest">{item.brand} • Talla {item.selectedSize}</p>
+                    <p className="font-black text-amber-600 mt-1">${Number(price).toLocaleString('es-CO')}</p>
+                  </div>
+                  <button 
+                    onClick={() => removeFromCart(index)}
+                    className="p-2 text-neutral-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all self-start"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Footer con Total y Botón */}
+        {cart.length > 0 && (
+          <div className="p-6 border-t border-neutral-100 space-y-4 bg-white">
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-bold uppercase text-neutral-400">Total</span>
+              <span className="text-2xl font-black text-amber-600">${total.toLocaleString('es-CO')}</span>
+            </div>
+            <button 
+              onClick={handleCheckoutWhatsApp}
+              className="w-full bg-black text-white py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-amber-600 transition-all flex items-center justify-center gap-2 shadow-xl"
+            >
+              <MessageCircle size={16} />
+              Finalizar por WhatsApp
+            </button>
+            <p className="text-[9px] text-neutral-400 text-center">Te responderemos en minutos para confirmar disponibilidad</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2076,6 +2220,11 @@ export default function App() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [cart, setCart] = useState(() => {
+    const saved = localStorage.getItem('verzing_cart');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [isHeaderSticky, setIsHeaderSticky] = useState(false);
   const [activeTab, setActiveTab] = useState('shop');
   const [isLoading, setIsLoading] = useState(true); // Estado de carga para productos
@@ -2462,6 +2611,48 @@ export default function App() {
     setCurrentUser(null);
     setUserRole(null);
     localStorage.removeItem('verzing_session');
+  };
+
+  // --- FUNCIONES DEL CARRITO ---
+  const addToCart = (product, selectedSize) => {
+    if (!selectedSize) {
+      alert('Por favor, selecciona una talla');
+      return false;
+    }
+
+    // Permitir 1 producto sin registro, pero para más de 1 requiere login
+    if (!currentUser && cart.length >= 1) {
+      alert('🔐 Para añadir más productos necesitas registrarte.\n\nCrea una cuenta gratis y disfruta de todos los beneficios.');
+      setIsLoginOpen(true);
+      return false;
+    }
+
+    const cartItem = {
+      ...product,
+      selectedSize,
+      addedAt: Date.now()
+    };
+
+    setCart(prev => {
+      const updated = [...prev, cartItem];
+      localStorage.setItem('verzing_cart', JSON.stringify(updated));
+      return updated;
+    });
+
+    return true;
+  };
+
+  const removeFromCart = (index) => {
+    setCart(prev => {
+      const updated = prev.filter((_, i) => i !== index);
+      localStorage.setItem('verzing_cart', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const clearCart = () => {
+    setCart([]);
+    localStorage.removeItem('verzing_cart');
   }; 
 
   // Catalog filtering is handled inside the new <CatalogSection /> component.
@@ -2486,7 +2677,7 @@ export default function App() {
       `}</style>
 
       <Navbar 
-        wishlistCount={0} 
+        wishlistCount={cart.length} 
         onOpenAssistant={() => setIsAssistantOpen(true)} 
         userRole={userRole} 
         currentUser={currentUser}
@@ -2495,6 +2686,7 @@ export default function App() {
         usingFirestore={usingFirestore}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        onOpenCart={() => setIsCartOpen(true)}
       />
 
       {activeTab === 'shop' && (
@@ -2533,7 +2725,22 @@ export default function App() {
 
       <Footer />
 
-      {selectedProduct && <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} />}
+      {selectedProduct && (
+        <ProductModal 
+          product={selectedProduct} 
+          onClose={() => setSelectedProduct(null)} 
+          addToCart={addToCart}
+          currentUser={currentUser}
+          onOpenLogin={() => setIsLoginOpen(true)}
+        />
+      )}
+      <CartDrawer 
+        isOpen={isCartOpen} 
+        onClose={() => setIsCartOpen(false)} 
+        cart={cart} 
+        removeFromCart={removeFromCart}
+        currentUser={currentUser}
+      />
       <AIAssistant isOpen={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} products={products} />
       <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} onLogin={(user) => { handleLogin(user); setIsLoginOpen(false); }} />
     </div>
