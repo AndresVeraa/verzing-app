@@ -35,6 +35,7 @@ import {
 import { Line } from 'react-chartjs-2';
 import { db, firebaseConfigured } from './firebase';
 import { collection, query, orderBy, onSnapshot, addDoc, setDoc, deleteDoc, doc, serverTimestamp, getDoc } from 'firebase/firestore';
+import AboutUs from './AboutUs';
 
 // Local size-guide assets
 import Tabladetallas from './assets/Tallas/Tabladetallas.jpeg';
@@ -106,6 +107,61 @@ const BRANDS = ['Todas', 'Nike', 'Adidas', 'Jordan', 'New Balance', 'On Cloud', 
 const STYLES = ['Todos', 'Streetwear', 'Retro', 'Limited', 'Deportivo', 'Casual', 'Para Salir'];
 const GENDERS = ['Todos', 'Hombre', 'Dama', 'Unisex', 'Niños'];
 const EURO_SIZES = ['36', '37', '38', '39', '40', '41', '42', '43', '44', '45'];
+
+// --- CONTENIDO Y TEXTOS POR DEFECTO (CMS) ---
+const DEFAULT_TEXTOS = {
+  dropText: 'Drop 2026 / Selección Auténtica',
+  titleMain: 'SNEAKERS\nQUE HABLAN\nPOR TI.',
+  subtitle: 'Curaduría premium de calzado Triple A. Tu estilo no tiene límites, nuestra calidad tampoco.',
+  welcomeMessage: 'Bienvenido a Verzing — selección curada para auténticos coleccionistas.',
+  aboutMission: 'Nuestra misión es ofrecer calzado de la más alta calidad, cuidadosamente seleccionado para clientes que valoran autenticidad y estilo.',
+  aboutVision: 'Ser la referencia regional en calzado premium, impulsando comunidad y cultura urbana a través de colecciones exclusivas.',
+  shippingMethods: 'Envíos 24-72h con tracking. Opciones estándar y exprés disponibles.',
+  paymentMethods: 'Aceptamos tarjetas, PSE, transferencias y pagos en cuotas.',
+  designImage: ''
+};
+
+// --- UTIL: COMPRESIÓN DE IMÁGENES (máx 1MB) ---
+async function compressImageFile(file, maxMB = 1) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let quality = 0.9;
+          let attempt = 0;
+          const maxAttempts = 10;
+          const tryCompress = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+            const jpeg = canvas.toDataURL('image/jpeg', quality);
+            const approxMB = ((jpeg.length - 26) * 3) / 4 / (1024 * 1024);
+            if (approxMB <= maxMB || quality < 0.3 || attempt >= maxAttempts) {
+              resolve(jpeg);
+            } else {
+              quality -= 0.1;
+              attempt += 1;
+              tryCompress();
+            }
+          };
+          tryCompress();
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 // --- FUNCIÓN API GEMINI ---
 async function callGemini(prompt, systemInstruction = "") {
@@ -388,48 +444,56 @@ const LoginModal = ({ isOpen, onClose, onLogin }) => {
   );
 };
 
-const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProduct, deleteProduct, usingFirestore, migrateProductsToFirestore }) => {
+const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProduct, deleteProduct, usingFirestore, migrateProductsToFirestore, cmsTextos, setCmsTextos }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [adminTab, setAdminTab] = useState('inventario'); // 'inventario' | 'diseno'
+  const [designData, setDesignData] = useState(() => cmsTextos || DEFAULT_TEXTOS);
     const [formData, setFormData] = useState({ name: '', price: '', vibe: 'Streetwear', sizes: [], gender: 'Unisex', brand: 'Nike', imagesDataUrls: [], isPromo: false, promoPrice: '', promoUntil: '' });
 
-    // Maneja la carga de múltiples archivos y los convierte a Data URLs en formato JPEG para persistir en localStorage
+    // Sync designData when cmsTextos changes
+    useEffect(() => {
+      setDesignData(cmsTextos || DEFAULT_TEXTOS);
+    }, [cmsTextos]);
+
+    // Maneja la carga de múltiples archivos y los comprime usando compressImageFile
     const handleFileChange = async (e) => {
       const files = Array.from(e.target.files || []);
       if (!files.length) return;
-
-      const fileToJpegDataUrl = (file, quality = 0.9) => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = reject;
-        reader.onload = () => {
-          const img = new Image();
-          img.onload = () => {
-            try {
-              const canvas = document.createElement('canvas');
-              canvas.width = img.width;
-              canvas.height = img.height;
-              const ctx = canvas.getContext('2d');
-              // Rellenar fondo blanco para preservar fondo en imágenes transparentes
-              ctx.fillStyle = '#fff';
-              ctx.fillRect(0, 0, canvas.width, canvas.height);
-              ctx.drawImage(img, 0, 0);
-              const jpeg = canvas.toDataURL('image/jpeg', quality);
-              resolve(jpeg);
-            } catch (err) {
-              reject(err);
-            }
-          };
-          img.onerror = reject;
-          img.src = reader.result;
-        };
-        reader.readAsDataURL(file);
-      });
-
       try {
-        const urls = await Promise.all(files.map(f => fileToJpegDataUrl(f)));
+        const urls = await Promise.all(files.map(f => compressImageFile(f, 1)));
         setFormData(prev => ({ ...prev, imagesDataUrls: [...(prev.imagesDataUrls || []), ...urls] }));
       } catch (err) {
-        // ignore failures for now
+        console.error('Error compressing images:', err);
+      }
+    };
+
+    // Maneja imagen de diseño con compresión
+    const handleDesignImageUpload = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        const dataUrl = await compressImageFile(file, 1);
+        setDesignData(prev => ({ ...prev, designImage: dataUrl }));
+      } catch (err) {
+        console.error('Error compressing design image:', err);
+      }
+    };
+
+    // Guardar configuración de diseño en Firestore
+    const handleSaveDesign = async () => {
+      try {
+        if (usingFirestore) {
+          await setDoc(doc(db, 'configuracion', 'textos_web'), designData, { merge: true });
+          onNotify && onNotify('✅ Configuración de diseño guardada en Firestore');
+        } else {
+          localStorage.setItem('verzing_textos', JSON.stringify(designData));
+          onNotify && onNotify('✅ Configuración guardada localmente');
+        }
+        setCmsTextos && setCmsTextos(designData);
+      } catch (err) {
+        console.error('Error saving design config:', err);
+        onNotify && onNotify('❌ Error al guardar configuración');
       }
     };
 
@@ -544,14 +608,101 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
   }; 
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 mb-20 animate-in fade-in slide-in-from-top-4">
-      <div className="bg-white border-2 border-neutral-100 rounded-[2.5rem] p-6 sm:p-10">
-        <div className="flex justify-between items-center mb-10">
-          <div>
-            <h2 className="text-3xl font-black uppercase tracking-tighter">Inventario Verzing</h2>
-            <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest mt-1">Gestión de Catálogo Triple A</p>
+    <div className="max-w-7xl mx-auto px-3 sm:px-6 mb-20 animate-in fade-in slide-in-from-top-4">
+      <div className="bg-white border-2 border-neutral-100 rounded-2xl sm:rounded-[2.5rem] p-4 sm:p-6 md:p-10">
+        {/* Tabs de navegación del Admin */}
+        <div className="flex gap-2 mb-6 sm:mb-8 overflow-x-auto no-scrollbar -mx-1 px-1">
+          <button
+            onClick={() => setAdminTab('inventario')}
+            className={`flex-shrink-0 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${adminTab === 'inventario' ? 'bg-black text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}
+          >
+            📦 Inventario
+          </button>
+          <button
+            onClick={() => setAdminTab('diseno')}
+            className={`flex-shrink-0 px-4 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all ${adminTab === 'diseno' ? 'bg-amber-600 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'}`}
+          >
+            🎨 Diseño Web
+          </button>
+        </div>
+
+        {/* TAB: Diseño Web */}
+        {adminTab === 'diseno' && (
+          <div className="animate-in fade-in slide-in-from-bottom-4">
+            <div className="mb-6 sm:mb-8">
+              <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tighter">Configuración de Diseño</h2>
+              <p className="text-[10px] sm:text-xs text-neutral-400 mt-1">Edita los textos del Hero y la sección Sobre Nosotros</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+              <div className="space-y-3 sm:space-y-4">
+                <div>
+                  <label className="text-[9px] sm:text-[10px] font-black uppercase text-neutral-400 mb-1.5 sm:mb-2 block">Texto Drop (Hero)</label>
+                  <input value={designData.dropText || ''} onChange={e => setDesignData(prev => ({ ...prev, dropText: e.target.value }))} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-neutral-200 focus:border-amber-600 outline-none text-sm" />
+                </div>
+                <div>
+                  <label className="text-[9px] sm:text-[10px] font-black uppercase text-neutral-400 mb-1.5 sm:mb-2 block">Título Principal (usa \n para saltos)</label>
+                  <textarea value={designData.titleMain || ''} onChange={e => setDesignData(prev => ({ ...prev, titleMain: e.target.value }))} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-neutral-200 focus:border-amber-600 outline-none text-sm" rows={3} />
+                </div>
+                <div>
+                  <label className="text-[9px] sm:text-[10px] font-black uppercase text-neutral-400 mb-1.5 sm:mb-2 block">Subtítulo Hero</label>
+                  <input value={designData.subtitle || ''} onChange={e => setDesignData(prev => ({ ...prev, subtitle: e.target.value }))} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-neutral-200 focus:border-amber-600 outline-none text-sm" />
+                </div>
+                <div>
+                  <label className="text-[9px] sm:text-[10px] font-black uppercase text-neutral-400 mb-1.5 sm:mb-2 block">Mensaje de Bienvenida</label>
+                  <input value={designData.welcomeMessage || ''} onChange={e => setDesignData(prev => ({ ...prev, welcomeMessage: e.target.value }))} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-neutral-200 focus:border-amber-600 outline-none text-sm" />
+                </div>
+              </div>
+              <div className="space-y-3 sm:space-y-4">
+                <div>
+                  <label className="text-[9px] sm:text-[10px] font-black uppercase text-neutral-400 mb-1.5 sm:mb-2 block">Misión</label>
+                  <textarea value={designData.aboutMission || ''} onChange={e => setDesignData(prev => ({ ...prev, aboutMission: e.target.value }))} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-neutral-200 focus:border-amber-600 outline-none text-sm" rows={3} />
+                </div>
+                <div>
+                  <label className="text-[9px] sm:text-[10px] font-black uppercase text-neutral-400 mb-1.5 sm:mb-2 block">Visión</label>
+                  <textarea value={designData.aboutVision || ''} onChange={e => setDesignData(prev => ({ ...prev, aboutVision: e.target.value }))} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-neutral-200 focus:border-amber-600 outline-none text-sm" rows={3} />
+                </div>
+                <div>
+                  <label className="text-[9px] sm:text-[10px] font-black uppercase text-neutral-400 mb-1.5 sm:mb-2 block">Métodos de Envío</label>
+                  <input value={designData.shippingMethods || ''} onChange={e => setDesignData(prev => ({ ...prev, shippingMethods: e.target.value }))} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-neutral-200 focus:border-amber-600 outline-none text-sm" />
+                </div>
+                <div>
+                  <label className="text-[9px] sm:text-[10px] font-black uppercase text-neutral-400 mb-1.5 sm:mb-2 block">Métodos de Pago</label>
+                  <input value={designData.paymentMethods || ''} onChange={e => setDesignData(prev => ({ ...prev, paymentMethods: e.target.value }))} className="w-full px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-neutral-200 focus:border-amber-600 outline-none text-sm" />
+                </div>
+                <div>
+                  <label className="text-[9px] sm:text-[10px] font-black uppercase text-neutral-400 mb-1.5 sm:mb-2 block">Imagen de Diseño (opcional, máx 1MB)</label>
+                  <input type="file" accept="image/*" onChange={handleDesignImageUpload} className="w-full text-sm" />
+                  {designData.designImage && (
+                    <div className="mt-3 relative inline-block">
+                      <img src={designData.designImage} alt="Preview" className="w-24 sm:w-32 h-18 sm:h-24 object-cover rounded-lg sm:rounded-xl shadow" />
+                      <button type="button" onClick={() => setDesignData(prev => ({ ...prev, designImage: '' }))} className="absolute -top-2 -right-2 bg-rose-500 text-white rounded-full p-1">
+                        <X size={12} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row gap-3">
+              <button onClick={handleSaveDesign} className="bg-amber-600 text-white px-6 sm:px-8 py-3 sm:py-4 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest hover:bg-amber-700 transition-all flex items-center justify-center gap-2">
+                <Save size={14} className="sm:hidden" /><Save size={16} className="hidden sm:block" /> Guardar Cambios
+              </button>
+              <button onClick={() => setDesignData(DEFAULT_TEXTOS)} className="bg-neutral-100 text-neutral-600 px-5 sm:px-6 py-3 sm:py-4 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest hover:bg-neutral-200 transition-all">
+                Restaurar Valores
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
+        )}
+
+        {/* TAB: Inventario */}
+        {adminTab === 'inventario' && (
+          <>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-0 mb-6 sm:mb-10">
+          <div>
+            <h2 className="text-xl sm:text-2xl md:text-3xl font-black uppercase tracking-tighter">Inventario Verzing</h2>
+            <p className="text-[10px] sm:text-xs font-bold text-neutral-400 uppercase tracking-widest mt-1">Gestión de Catálogo Triple A</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
           <button 
             onClick={() => {
               if (isAdding) {
@@ -562,10 +713,12 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
                 setIsAdding(true);
               }
             }}
-            className="bg-amber-600 text-white px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-700 transition-all flex items-center gap-2"
+            className="bg-amber-600 text-white px-4 sm:px-8 py-3 sm:py-4 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest hover:bg-amber-700 transition-all flex items-center gap-2 flex-1 sm:flex-none justify-center"
           > 
-            {isAdding ? <X size={16} /> : <Plus size={16} />}
-            {isAdding ? 'Cancelar' : 'Nuevo Modelo'}
+            {isAdding ? <X size={14} className="sm:hidden" /> : <Plus size={14} className="sm:hidden" />}
+            {isAdding ? <X size={16} className="hidden sm:block" /> : <Plus size={16} className="hidden sm:block" />}
+            {isAdding ? 'Cancelar' : 'Nuevo'}
+            <span className="hidden sm:inline">{isAdding ? '' : ' Modelo'}</span>
           </button>
 
           {usingFirestore && (
@@ -574,7 +727,6 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
                 if (!confirm('Subir todos los productos locales a Firestore? Esto puede sobrescribir documentos existentes con el mismo id.')) return;
                 try {
                   setIsAdding(false);
-                  // show a quick notification
                   onNotify && onNotify('Iniciando sincronización con Firestore...');
                   const res = await migrateProductsToFirestore(products);
                   onNotify && onNotify(`Sincronización completa. Migrados: ${res.success}, errores: ${res.fail}`);
@@ -582,45 +734,45 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
                   onNotify && onNotify(err?.message || 'Error al sincronizar');
                 }
               }}
-              className="bg-white text-amber-600 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-amber-600 hover:bg-amber-50 transition-all"
+              className="bg-white text-amber-600 px-3 sm:px-6 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl text-[8px] sm:text-[10px] font-black uppercase tracking-widest border border-amber-600 hover:bg-amber-50 transition-all"
             >
-              Sincronizar catálogo
+              <span className="sm:hidden">Sync</span>
+              <span className="hidden sm:inline">Sincronizar catálogo</span>
             </button>
           )}
 
-          {/* TEMP: botón para limpiar localStorage y recargar (limpia IDs viejos) */}
           <button
             onClick={() => {
               if (!confirm('Limpiar localStorage y recargar la página? Esto borrará datos locales y recargará la app.')) return;
               localStorage.clear();
               window.location.reload();
             }}
-            className="bg-rose-50 text-rose-500 px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border border-rose-200 hover:bg-rose-100 transition-all"
+            className="bg-rose-50 text-rose-500 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl text-[8px] sm:text-[10px] font-black uppercase tracking-widest border border-rose-200 hover:bg-rose-100 transition-all"
           >
-            Reset local
+            Reset
           </button>
         </div>
         </div>
 
         {isAdding && (
-          <form onSubmit={handleSave} className="bg-neutral-50 p-8 rounded-3xl mb-12 grid md:grid-cols-2 gap-6 animate-in zoom-in-95">
-            <div className="space-y-4">
+          <form onSubmit={handleSave} className="bg-neutral-50 p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl mb-8 sm:mb-12 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 animate-in zoom-in-95">
+            <div className="space-y-3 sm:space-y-4">
               <input 
                 placeholder="Nombre del Modelo" 
-                className="w-full bg-white px-6 py-4 rounded-xl border border-neutral-200 outline-none focus:border-amber-600"
+                className="w-full bg-white px-4 sm:px-6 py-3 sm:py-4 rounded-lg sm:rounded-xl border border-neutral-200 outline-none focus:border-amber-600 text-sm"
                 value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required 
               />
               <input 
                 placeholder="Precio (Ej: 185000)" 
                 type="number" 
-                className="w-full bg-white px-6 py-4 rounded-xl border border-neutral-200 outline-none focus:border-amber-600"
+                className="w-full bg-white px-4 sm:px-6 py-3 sm:py-4 rounded-lg sm:rounded-xl border border-neutral-200 outline-none focus:border-amber-600 text-sm"
                 value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} required 
               />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4">
                 <div className="space-y-1">
                   <label className="text-[8px] font-black uppercase ml-2 text-neutral-400">Marca</label>
                   <select 
-                    className="w-full bg-white px-6 py-4 rounded-xl border border-neutral-200 outline-none focus:border-amber-600"
+                    className="w-full bg-white px-3 sm:px-6 py-3 sm:py-4 rounded-lg sm:rounded-xl border border-neutral-200 outline-none focus:border-amber-600 text-sm"
                     value={formData.brand} onChange={e => setFormData({...formData, brand: e.target.value})}
                   >
                     {BRANDS.filter(b => b !== 'Todas').map(b => <option key={b} value={b}>{b}</option>)}
@@ -630,7 +782,7 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
                 <div className="space-y-1">
                   <label className="text-[8px] font-black uppercase ml-2 text-neutral-400">Género</label>
                   <select 
-                    className="w-full bg-white px-6 py-4 rounded-xl border border-neutral-200 outline-none focus:border-amber-600"
+                    className="w-full bg-white px-3 sm:px-6 py-3 sm:py-4 rounded-lg sm:rounded-xl border border-neutral-200 outline-none focus:border-amber-600 text-sm"
                     value={formData.gender} onChange={e => setFormData({...formData, gender: e.target.value})}
                   >
                     {GENDERS.filter(g => g !== 'Todos').map(g => <option key={g} value={g}>{g}</option>)}
@@ -638,17 +790,17 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
                 </div>
               </div>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-3 sm:space-y-4">
               {/* SECCIÓN DE TALLAS (36-45 EUR) */}
-              <div className="space-y-3">
-                <label className="text-[10px] font-black uppercase text-neutral-400 ml-2">Tallas Disponibles (EUR)</label>
-                <div className="flex flex-wrap gap-2 p-2 bg-neutral-50 rounded-2xl">
+              <div className="space-y-2 sm:space-y-3">
+                <label className="text-[9px] sm:text-[10px] font-black uppercase text-neutral-400 ml-2">Tallas Disponibles (EUR)</label>
+                <div className="flex flex-wrap gap-1.5 sm:gap-2 p-2 bg-white sm:bg-neutral-50 rounded-xl sm:rounded-2xl">
                   {EURO_SIZES.map(size => (
                     <button
                       key={`size-btn-${size}`}
                       type="button"
                       onClick={() => toggleSize(size)}
-                      className={`w-10 h-10 rounded-xl text-[10px] font-bold transition-all border-2 ${
+                      className={`w-9 h-9 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-bold transition-all border-2 ${
                         formData.sizes.includes(size)
                         ? 'bg-black text-white border-black shadow-md'
                         : 'bg-white text-neutral-400 border-neutral-100 hover:border-neutral-300'
@@ -661,10 +813,10 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
               </div>
 
               {/* SECCIÓN DE ESTILO / OCASIÓN */}
-              <div className="space-y-3 mt-2">
-                <label className="text-[10px] font-black uppercase text-neutral-400 ml-2">Estilo / Ocasión</label>
+              <div className="space-y-2 sm:space-y-3">
+                <label className="text-[9px] sm:text-[10px] font-black uppercase text-neutral-400 ml-2">Estilo / Ocasión</label>
                 <select 
-                  className="w-full bg-neutral-50 px-6 py-4 rounded-2xl border-none outline-none focus:ring-2 focus:ring-amber-500 font-bold text-sm"
+                  className="w-full bg-white sm:bg-neutral-50 px-4 sm:px-6 py-3 sm:py-4 rounded-xl sm:rounded-2xl border-none outline-none focus:ring-2 focus:ring-amber-500 font-bold text-sm"
                   value={formData.vibe}
                   onChange={e => setFormData({...formData, vibe: e.target.value})}
                 >
@@ -675,22 +827,23 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
               </div>
 
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest mb-2 block">Fotos del Modelo</label>
+                <label className="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest mb-2 block">Fotos del Modelo</label>
                 <input 
                   type="file" 
                   accept="image/*" 
                   multiple
                   onChange={handleFileChange}
-                  className="w-full bg-white px-6 py-4 rounded-xl border border-neutral-200 outline-none focus:border-amber-600"
+                  className="w-full bg-white px-4 sm:px-6 py-3 sm:py-4 rounded-lg sm:rounded-xl border border-neutral-200 outline-none focus:border-amber-600 text-sm"
                 />
 
                 {formData.imagesDataUrls && formData.imagesDataUrls.length > 0 && (
-                  <div className="mt-4 grid grid-cols-4 gap-2">
+                  <div className="mt-3 sm:mt-4 grid grid-cols-4 sm:grid-cols-4 gap-2">
                     {formData.imagesDataUrls.map((src, idx) => (
-                      <div key={idx} className="relative w-20 h-20 rounded-xl overflow-hidden border border-neutral-200">
+                      <div key={idx} className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-lg sm:rounded-xl overflow-hidden border border-neutral-200">
                         <img src={src} alt={`Preview ${idx+1}`} className="w-full h-full object-cover" />
-                        <button type="button" onClick={() => removeImageAt(idx)} className="absolute top-1 right-1 p-1 bg-white rounded-full shadow-sm text-rose-500">
-                          <Trash2 size={12} />
+                        <button type="button" onClick={() => removeImageAt(idx)} className="absolute top-0.5 right-0.5 sm:top-1 sm:right-1 p-0.5 sm:p-1 bg-white rounded-full shadow-sm text-rose-500">
+                          <Trash2 size={10} className="sm:hidden" />
+                          <Trash2 size={12} className="hidden sm:block" />
                         </button>
                       </div>
                     ))}
@@ -699,37 +852,37 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
               </div>
 
               {/* Promo fields */}
-              <div className="md:col-span-2 p-6 bg-amber-50 rounded-3xl border-2 border-amber-100 space-y-4">
-                <div className="flex items-center gap-3">
+              <div className="md:col-span-2 p-4 sm:p-6 bg-amber-50 rounded-2xl sm:rounded-3xl border-2 border-amber-100 space-y-3 sm:space-y-4">
+                <div className="flex items-center gap-2 sm:gap-3">
                   <input 
                     type="checkbox" 
                     id="isPromo"
                     checked={formData.isPromo}
                     onChange={e => setFormData({...formData, isPromo: e.target.checked})}
-                    className="w-5 h-5 accent-amber-600"
+                    className="w-4 h-4 sm:w-5 sm:h-5 accent-amber-600"
                   />
-                  <label htmlFor="isPromo" className="text-sm font-black uppercase italic">¿Es una promoción activa?</label>
+                  <label htmlFor="isPromo" className="text-xs sm:text-sm font-black uppercase italic">¿Es una promoción activa?</label>
                 </div>
 
                 {formData.isPromo && (
-                  <div className="grid md:grid-cols-2 gap-4 animate-in fade-in zoom-in-95">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 animate-in fade-in zoom-in-95">
                     <input 
                       placeholder="Precio de Oferta" 
                       type="number" 
-                      className="w-full bg-white px-6 py-4 rounded-xl border border-neutral-200"
+                      className="w-full bg-white px-4 sm:px-6 py-3 sm:py-4 rounded-lg sm:rounded-xl border border-neutral-200 text-sm"
                       value={formData.promoPrice} 
                       onChange={e => setFormData({...formData, promoPrice: e.target.value})} 
                     />
                     <input 
                       type="datetime-local" 
-                      className="w-full bg-white px-6 py-4 rounded-xl border border-neutral-200"
+                      className="w-full bg-white px-4 sm:px-6 py-3 sm:py-4 rounded-lg sm:rounded-xl border border-neutral-200 text-sm"
                       value={formData.promoUntil} 
                       onChange={e => setFormData({...formData, promoUntil: e.target.value})} 
                     />
                   </div>
                 )}
 
-              <button type="submit" className="w-full bg-black text-white py-5 rounded-2xl font-black uppercase tracking-widest hover:bg-amber-600 transition-all">
+              <button type="submit" className="w-full bg-black text-white py-4 sm:py-5 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-black uppercase tracking-widest hover:bg-amber-600 transition-all">
                 Finalizar y Publicar
               </button>
             </div>
@@ -737,35 +890,39 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
           </form>
         )}
 
-        <div className="grid gap-4">
+        <div className="grid gap-3 sm:gap-4">
           {products.map(p => (
-            <div key={p.id} className={`flex items-center justify-between p-4 bg-neutral-50 rounded-2xl hover:bg-white border border-transparent hover:border-neutral-100 transition-all group ${removingId && removingId.toString() === p.id.toString() ? 'animate-out fade-out slide-out-to-right duration-300' : ''}`}>
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-white rounded-xl overflow-hidden flex items-center justify-center">
+            <div key={p.id} className={`flex items-center justify-between p-3 sm:p-4 bg-neutral-50 rounded-xl sm:rounded-2xl hover:bg-white border border-transparent hover:border-neutral-100 transition-all group ${removingId && removingId.toString() === p.id.toString() ? 'animate-out fade-out slide-out-to-right duration-300' : ''}`}>
+              <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                <div className="w-12 h-12 sm:w-16 sm:h-16 bg-white rounded-lg sm:rounded-xl overflow-hidden flex-shrink-0">
                    <img src={Array.isArray(p.image) ? p.image[0] : p.image} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
                 </div>
-                <div>
-                  <h4 className="font-bold text-lg">{p.name}</h4>
-                  <p className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">${p.price.toLocaleString()} • {p.vibe}</p>
+                <div className="min-w-0 flex-1">
+                  <h4 className="font-bold text-sm sm:text-lg truncate">{p.name}</h4>
+                  <p className="text-[8px] sm:text-[10px] font-bold text-neutral-400 uppercase tracking-widest">${p.price.toLocaleString()} • {p.vibe}</p>
                 </div>
               </div>
-              <div className="flex gap-2">
-                <button type="button" onClick={(e) => { e.stopPropagation(); handleEdit(p); }} className="p-3 bg-white text-amber-600 rounded-xl hover:bg-amber-600 hover:text-white transition-all shadow-sm" title="Editar">
-                  <Edit size={16} />
+              <div className="flex gap-1.5 sm:gap-2 flex-shrink-0 ml-2">
+                <button type="button" onClick={(e) => { e.stopPropagation(); handleEdit(p); }} className="p-2 sm:p-3 bg-white text-amber-600 rounded-lg sm:rounded-xl hover:bg-amber-600 hover:text-white transition-all shadow-sm" title="Editar">
+                  <Edit size={14} className="sm:hidden" />
+                  <Edit size={16} className="hidden sm:block" />
                 </button>
                 <button 
                   type="button" 
                   onClick={(e) => { e.stopPropagation(); handleDelete(p.id); }} 
-                  className={`p-3 rounded-xl transition-all ${removingId === p.id ? 'opacity-50 scale-90 bg-gray-200' : 'bg-white text-rose-500 hover:bg-rose-500 hover:text-white'}`}
+                  className={`p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all ${removingId === p.id ? 'opacity-50 scale-90 bg-gray-200' : 'bg-white text-rose-500 hover:bg-rose-500 hover:text-white'}`}
                   disabled={removingId === p.id}
                   title="Eliminar"
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={14} className="sm:hidden" />
+                  <Trash2 size={16} className="hidden sm:block" />
                 </button>
               </div>
             </div>
           ))}
         </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -798,6 +955,7 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
         {/* Escritorio (Sin cambios) */}
         <div className="hidden md:flex space-x-10 text-[10px] font-bold uppercase tracking-[0.2em]">
           <button onClick={() => navigateTo('shop', 'catalog')} className="hover:text-amber-600">Catálogo</button>
+          <button onClick={() => navigateTo('about')} className={`hover:text-amber-600 ${activeTab === 'about' ? 'text-amber-600' : ''}`}>Sobre Nosotros</button>
           <button onClick={onOpenAssistant} className="hover:text-amber-600 flex items-center gap-2">✨ Asistente AI</button>
           <button 
             onClick={() => setActiveTab('sizes')}
@@ -884,6 +1042,16 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
             Guía de Tallas <Maximize2 size={18} />
           </button>
 
+          <button 
+            onClick={() => {
+              setActiveTab('about');
+              setMobileMenuOpen(false);
+            }}
+            className={`flex items-center justify-between p-6 rounded-3xl text-sm font-black uppercase tracking-widest ${activeTab === 'about' ? 'bg-amber-600 text-white' : 'bg-neutral-50 text-neutral-800'} active:scale-95 transition-transform`}
+          >
+            Sobre Nosotros <User size={18} />
+          </button>
+
           {/* Sección inferior con Logout/Login */}
           <div className="mt-auto pb-10 space-y-8">
             <div className="flex justify-center gap-8">
@@ -913,19 +1081,26 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
   );
 };
 
-const Hero = ({ onOpenAssistant }) => (
+const Hero = ({ onOpenAssistant, cmsTextos }) => {
+  const { dropText, titleMain, subtitle } = cmsTextos || DEFAULT_TEXTOS;
+  
+  return (
   <section className="relative min-h-screen flex items-center pt-24 sm:pt-20 px-6 bg-[#FDFCFB] overflow-hidden">
     <div className="max-w-7xl mx-auto w-full grid md:grid-cols-2 gap-16 items-center text-left">
       <div className="animate-in fade-in slide-in-from-bottom-8 duration-1000 z-10">
         <h4 className="text-amber-600 font-bold tracking-[0.5em] text-[10px] uppercase mb-6 flex items-center gap-2">
           <span className="w-8 h-[1px] bg-amber-600"></span>
-          Drop 2026 / Selección Auténtica
+          {dropText}
         </h4>
         <h1 className="text-4xl sm:text-6xl md:text-8xl font-black tracking-tighter leading-[0.85] mb-6 sm:mb-10 uppercase">
-          SNEAKERS<br />QUE <span className="border-text italic">HABLAN</span><br />POR TI.
+          {String(titleMain).split('\n').map((line, i) => (
+            <span key={i}>
+              {i === 1 ? <><span className="border-text italic">{line}</span><br /></> : <>{line}<br /></>}
+            </span>
+          ))}
         </h1>
         <p className="text-gray-500 max-w-sm mb-6 text-sm leading-relaxed font-medium">
-          Curaduría premium de calzado Triple A. Tu estilo no tiene límites, nuestra calidad tampoco.
+          {subtitle}
         </p>
         <div className="flex flex-col sm:flex-row gap-4">
           <button 
@@ -961,7 +1136,8 @@ const Hero = ({ onOpenAssistant }) => (
       </div>
     </div>
   </section>
-);
+  );
+};
 
 const ProductCard = ({ product, onClick }) => (
   <div 
@@ -1116,21 +1292,22 @@ const ProductModal = ({ product, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-2 sm:p-4">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose}></div>
-      <div className="relative bg-white w-full max-w-5xl rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col md:flex-row animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto no-scrollbar">
-        <button onClick={onClose} className="absolute top-8 right-8 z-10 p-2 bg-white/50 backdrop-blur rounded-full transition-colors">
-          <X size={20} />
+      <div className="relative bg-white w-full max-w-5xl rounded-2xl sm:rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col md:flex-row animate-in zoom-in-95 duration-300 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto no-scrollbar">
+        <button onClick={onClose} className="absolute top-4 right-4 sm:top-8 sm:right-8 z-10 p-2 bg-white/80 sm:bg-white/50 backdrop-blur rounded-full transition-colors">
+          <X size={18} className="sm:hidden" />
+          <X size={20} className="hidden sm:block" />
         </button>
-        <div className="md:w-1/2 bg-neutral-50 flex items-center justify-center p-12">
+        <div className="w-full md:w-1/2 bg-neutral-50 flex items-center justify-center p-4 sm:p-8 md:p-12">
           <div className="w-full max-w-md">
-            <div className="aspect-square bg-white rounded-3xl flex items-center justify-center shadow-inner relative overflow-hidden">
+            <div className="aspect-square bg-white rounded-2xl sm:rounded-3xl flex items-center justify-center shadow-inner relative overflow-hidden">
               <img src={(Array.isArray(product.image) ? product.image[activeImageIndex] : product.image)} className="w-full h-full object-cover" />
             </div>
             {Array.isArray(product.image) && product.image.length > 1 && (
-              <div className="mt-4 flex gap-2 overflow-x-auto no-scrollbar">
+              <div className="mt-3 sm:mt-4 flex gap-2 overflow-x-auto no-scrollbar pb-1">
                 {product.image.map((src, idx) => (
-                  <button key={idx} onClick={() => setActiveImageIndex(idx)} className={`w-20 h-20 rounded-xl overflow-hidden border-2 ${activeImageIndex === idx ? 'border-amber-600' : 'border-transparent'}`}>
+                  <button key={idx} onClick={() => setActiveImageIndex(idx)} className={`flex-shrink-0 w-14 h-14 sm:w-20 sm:h-20 rounded-lg sm:rounded-xl overflow-hidden border-2 ${activeImageIndex === idx ? 'border-amber-600' : 'border-transparent'}`}>
                     <img src={src} className="w-full h-full object-cover" />
                   </button>
                 ))}
@@ -1138,47 +1315,48 @@ const ProductModal = ({ product, onClose }) => {
             )}
           </div>
         </div>
-        <div className="md:w-1/2 p-12 flex flex-col text-left">
-          <span className="text-amber-600 font-bold text-[10px] uppercase tracking-[0.3em] mb-4">{product.vibe} Collection</span>
-          <h2 className="text-4xl font-black tracking-tighter mb-2 leading-none uppercase">{product.name}</h2>
+        <div className="w-full md:w-1/2 p-5 sm:p-8 md:p-12 flex flex-col text-left">
+          <span className="text-amber-600 font-bold text-[9px] sm:text-[10px] uppercase tracking-[0.2em] sm:tracking-[0.3em] mb-2 sm:mb-4">{product.vibe} Collection</span>
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tighter mb-2 leading-none uppercase">{product.name}</h2>
           {product.isPromo && product.promoPrice ? (
-            <div className="mb-8">
-              <p className="text-2xl font-black mb-1 text-amber-600">$ {Number(product.promoPrice).toLocaleString('es-CO')}</p>
-              <p className="text-sm text-neutral-400 line-through">$ {Number(product.price).toLocaleString('es-CO')}</p>
+            <div className="mb-4 sm:mb-8">
+              <p className="text-xl sm:text-2xl font-black mb-1 text-amber-600">$ {Number(product.promoPrice).toLocaleString('es-CO')}</p>
+              <p className="text-xs sm:text-sm text-neutral-400 line-through">$ {Number(product.price).toLocaleString('es-CO')}</p>
             </div>
           ) : (
-            <p className="text-2xl font-bold mb-8">$ {Number(product.price).toLocaleString('es-CO')}</p>
+            <p className="text-xl sm:text-2xl font-bold mb-4 sm:mb-8">$ {Number(product.price).toLocaleString('es-CO')}</p>
           )}
 
-          <div className="mb-8 p-6 bg-amber-50 rounded-3xl border border-amber-100">
-            <h3 className="text-[9px] font-black uppercase tracking-widest text-amber-800 mb-3 flex items-center gap-2">
-              <Sparkles size={12} className="animate-pulse" /> Conserje de Estilo AI
+          <div className="mb-4 sm:mb-8 p-4 sm:p-6 bg-amber-50 rounded-2xl sm:rounded-3xl border border-amber-100">
+            <h3 className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-amber-800 mb-2 sm:mb-3 flex items-center gap-2">
+              <Sparkles size={10} className="animate-pulse sm:hidden" />
+              <Sparkles size={12} className="animate-pulse hidden sm:block" /> Conserje de Estilo AI
             </h3>
-            <div className="text-xs text-amber-900 leading-relaxed mb-4 min-h-[30px]">
+            <div className="text-[10px] sm:text-xs text-amber-900 leading-relaxed mb-3 sm:mb-4 min-h-[25px] sm:min-h-[30px]">
               {loadingAI ? <span className="animate-pulse italic">Analizando tendencias...</span> : (aiAdvice || "¿Cómo combinarías estos Verzing?")}
             </div>
             {!aiAdvice && !loadingAI && (
-              <button onClick={handleGetStyleAdvice} className="bg-amber-600 text-white px-6 py-2 rounded-full text-[9px] font-bold uppercase tracking-widest hover:bg-amber-700 transition-all">Generar Consejos ✨</button>
+              <button onClick={handleGetStyleAdvice} className="bg-amber-600 text-white px-4 sm:px-6 py-1.5 sm:py-2 rounded-full text-[8px] sm:text-[9px] font-bold uppercase tracking-widest hover:bg-amber-700 transition-all">Generar Consejos ✨</button>
             )}
           </div>
 
-          <div className="mb-8 bg-neutral-50 p-6 rounded-3xl h-[120px]">
-             <p className="text-[8px] font-black uppercase tracking-widest text-neutral-400 mb-2">Demanda en Tiempo Real</p>
+          <div className="mb-4 sm:mb-8 bg-neutral-50 p-4 sm:p-6 rounded-2xl sm:rounded-3xl h-[90px] sm:h-[120px]">
+             <p className="text-[7px] sm:text-[8px] font-black uppercase tracking-widest text-neutral-400 mb-1 sm:mb-2">Demanda en Tiempo Real</p>
              <Line data={chartData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { display: false } } }} />
           </div>
 
-          <div className="mb-8">
-            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400 mb-4">Tallas EU</p>
-            <div className="grid grid-cols-5 gap-3">
+          <div className="mb-4 sm:mb-8">
+            <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-neutral-400 mb-3 sm:mb-4">Tallas EU</p>
+            <div className="grid grid-cols-5 gap-2 sm:gap-3">
               {product.sizes.map(size => (
-                <button key={size} onClick={() => setSelectedSize(size)} className={`py-4 text-xs font-bold rounded-2xl border-2 transition-all ${selectedSize === size ? 'border-black bg-black text-white' : 'border-neutral-100 hover:border-black'}`}>{size}</button>
+                <button key={size} onClick={() => setSelectedSize(size)} className={`py-2.5 sm:py-4 text-[10px] sm:text-xs font-bold rounded-xl sm:rounded-2xl border-2 transition-all ${selectedSize === size ? 'border-black bg-black text-white' : 'border-neutral-100 hover:border-black'}`}>{size}</button>
               ))}
             </div>
           </div>
           <button 
             onClick={handleWhatsAppChat}
             disabled={!selectedSize}
-            className={`w-full py-6 rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] transition-all ${
+            className={`w-full py-4 sm:py-6 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] transition-all ${
               selectedSize 
               ? 'bg-black text-white hover:bg-amber-600 shadow-xl' 
               : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
@@ -1272,27 +1450,27 @@ const PromoSection = ({ products, onProductClick }) => {
     const expired = diff <= 0;
 
     return (
-      <div className="group cursor-pointer bg-zinc-900 rounded-[2.5rem] p-4 border border-white/5 hover:border-amber-600/50 transition-all" onClick={() => !expired && onProductClick(p)}>
-        <div className="aspect-square rounded-[2rem] overflow-hidden relative mb-6">
+      <div className="group cursor-pointer bg-zinc-900 rounded-2xl sm:rounded-[2.5rem] p-3 sm:p-4 border border-white/5 hover:border-amber-600/50 transition-all" onClick={() => !expired && onProductClick(p)}>
+        <div className="aspect-square rounded-xl sm:rounded-[2rem] overflow-hidden relative mb-4 sm:mb-6">
           <img src={Array.isArray(p.image) ? p.image[0] : p.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
-          <div className="absolute top-4 right-4 bg-amber-600 text-black px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest animate-pulse">-{Math.round((1 - p.promoPrice / p.price) * 100)}%</div>
+          <div className="absolute top-3 right-3 sm:top-4 sm:right-4 bg-amber-600 text-black px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-widest animate-pulse">-{Math.round((1 - p.promoPrice / p.price) * 100)}%</div>
         </div>
-        <div className="px-4 pb-4">
-          <h3 className="text-xl font-black uppercase mb-2">{p.name}</h3>
-          <div className="flex items-center gap-4">
-            <span className="text-2xl font-black text-amber-600">${Number(p.promoPrice).toLocaleString()}</span>
-            <span className="text-sm text-zinc-500 line-through">${Number(p.price).toLocaleString()}</span>
+        <div className="px-2 sm:px-4 pb-2 sm:pb-4">
+          <h3 className="text-base sm:text-xl font-black uppercase mb-1 sm:mb-2 truncate">{p.name}</h3>
+          <div className="flex items-center gap-2 sm:gap-4">
+            <span className="text-lg sm:text-2xl font-black text-amber-600">${Number(p.promoPrice).toLocaleString()}</span>
+            <span className="text-xs sm:text-sm text-zinc-500 line-through">${Number(p.price).toLocaleString()}</span>
           </div>
-          <div className="mt-6 pt-6 border-t border-white/5 flex items-center justify-between">
-             <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Finaliza pronto</span>
+          <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-white/5 flex items-center justify-between">
+             <span className="text-[8px] sm:text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Finaliza pronto</span>
              {expired ? (
-               <div className="text-xs font-black uppercase bg-black/60 px-3 py-1 rounded">Finalizada</div>
+               <div className="text-[10px] sm:text-xs font-black uppercase bg-black/60 px-2 sm:px-3 py-1 rounded">Finalizada</div>
              ) : (
-               <div className="flex gap-2">
-                  <div className="bg-black px-2 py-1 rounded text-xs font-black">{days}d</div>
-                  <div className="bg-black px-2 py-1 rounded text-xs font-black">{hours}h</div>
-                  <div className="bg-black px-2 py-1 rounded text-xs font-black">{minutes}m</div>
-                  <div className="bg-black px-2 py-1 rounded text-xs font-black">{seconds}s</div>
+               <div className="flex gap-1 sm:gap-2">
+                  <div className="bg-black px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-[10px] sm:text-xs font-black">{days}d</div>
+                  <div className="bg-black px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-[10px] sm:text-xs font-black">{hours}h</div>
+                  <div className="bg-black px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-[10px] sm:text-xs font-black">{minutes}m</div>
+                  <div className="bg-black px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-[10px] sm:text-xs font-black">{seconds}s</div>
                </div>
              )}
           </div>
@@ -1302,16 +1480,16 @@ const PromoSection = ({ products, onProductClick }) => {
   };
 
   return (
-    <section className="py-20 bg-black text-white overflow-hidden relative">
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="flex flex-col md:flex-row justify-between items-end mb-12 gap-6">
+    <section className="py-12 sm:py-20 bg-black text-white overflow-hidden relative">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 sm:mb-12 gap-4 sm:gap-6">
           <div>
-            <h2 className="text-5xl md:text-7xl font-black uppercase tracking-tighter italic leading-none">Ofertas <span className="text-amber-600">Flash</span></h2>
-            <p className="text-zinc-500 font-bold uppercase tracking-widest mt-4">Solo por tiempo limitado</p>
+            <h2 className="text-3xl sm:text-5xl md:text-7xl font-black uppercase tracking-tighter italic leading-none">Ofertas <span className="text-amber-600">Flash</span></h2>
+            <p className="text-zinc-500 font-bold uppercase tracking-widest mt-2 sm:mt-4 text-[10px] sm:text-xs">Solo por tiempo limitado</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-8">
           {promoProducts.map(p => (
             <PromoCard key={p.id} p={p} />
           ))}
@@ -1322,53 +1500,53 @@ const PromoSection = ({ products, onProductClick }) => {
 };
 
 const Footer = () => (
-  <footer className="bg-[#0A0A0A] text-white pt-24 pb-12 px-6 overflow-hidden">
+  <footer className="bg-[#0A0A0A] text-white pt-12 sm:pt-24 pb-8 sm:pb-12 px-4 sm:px-6 overflow-hidden">
     <div className="max-w-7xl mx-auto">
-      <div className="grid lg:grid-cols-2 gap-16 pb-20 border-b border-white/5">
-        <div className="space-y-8 text-left">
-          <div className="text-4xl font-black tracking-tighter italic">VERZING<span className="text-amber-600">.CO</span></div>
-          <p className="text-zinc-400 max-w-sm text-sm leading-relaxed font-medium">Nacidos en el asfalto, curados para la autenticidad. No vendemos solo calzado, entregamos la confianza para caminar tu propia verdad.</p>
-          <div className="flex space-x-6">
-            <a href="https://www.instagram.com/verzing.co/" target="_blank" rel="noopener noreferrer" aria-label="Instagram" className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-white hover:text-black transition-all cursor-pointer"><Instagram size={16} /></a>
-            <div className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-white hover:text-black transition-all cursor-pointer text-[10px] font-bold">TK</div>
-            <a href="https://wa.me/3004371955" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp" className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-white hover:text-black transition-all cursor-pointer"><MessageCircle size={16} /></a>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 sm:gap-16 pb-12 sm:pb-20 border-b border-white/5">
+        <div className="space-y-6 sm:space-y-8 text-left">
+          <div className="text-2xl sm:text-4xl font-black tracking-tighter italic">VERZING<span className="text-amber-600">.CO</span></div>
+          <p className="text-zinc-400 max-w-sm text-xs sm:text-sm leading-relaxed font-medium">Nacidos en el asfalto, curados para la autenticidad. No vendemos solo calzado, entregamos la confianza para caminar tu propia verdad.</p>
+          <div className="flex space-x-4 sm:space-x-6">
+            <a href="https://www.instagram.com/verzing.co/" target="_blank" rel="noopener noreferrer" aria-label="Instagram" className="w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-white hover:text-black transition-all cursor-pointer"><Instagram size={14} className="sm:hidden" /><Instagram size={16} className="hidden sm:block" /></a>
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-white hover:text-black transition-all cursor-pointer text-[9px] sm:text-[10px] font-bold">TK</div>
+            <a href="https://wa.me/3004371955" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp" className="w-9 h-9 sm:w-10 sm:h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-white hover:text-black transition-all cursor-pointer"><MessageCircle size={14} className="sm:hidden" /><MessageCircle size={16} className="hidden sm:block" /></a>
           </div>
         </div>
-        <div className="bg-zinc-900/50 p-10 rounded-[2.5rem] border border-white/5 text-left">
-          <h4 className="text-xl font-bold mb-4 uppercase tracking-tighter">Únete al próximo Drop</h4>
-          <p className="text-zinc-500 text-xs mb-8">Sé el primero en enterarte de las colecciones limitadas y lanzamientos exclusivos Triple A.</p>
-          <div className="flex flex-col sm:flex-row gap-4">
-            <input type="email" placeholder="Tu email" className="flex-1 bg-black border border-white/10 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:border-amber-600 transition-colors" />
-            <button className="bg-white text-black px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 hover:text-white transition-all flex items-center justify-center gap-2">Suscribirse <Send size={12} /></button>
+        <div className="bg-zinc-900/50 p-6 sm:p-10 rounded-2xl sm:rounded-[2.5rem] border border-white/5 text-left">
+          <h4 className="text-lg sm:text-xl font-bold mb-3 sm:mb-4 uppercase tracking-tighter">Únete al próximo Drop</h4>
+          <p className="text-zinc-500 text-[10px] sm:text-xs mb-5 sm:mb-8">Sé el primero en enterarte de las colecciones limitadas y lanzamientos exclusivos Triple A.</p>
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+            <input type="email" placeholder="Tu email" className="flex-1 bg-black border border-white/10 rounded-xl sm:rounded-2xl px-4 sm:px-6 py-3 sm:py-4 text-xs sm:text-sm focus:outline-none focus:border-amber-600 transition-colors" />
+            <button className="bg-white text-black px-6 sm:px-8 py-3 sm:py-4 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 hover:text-white transition-all flex items-center justify-center gap-2">Suscribirse <Send size={10} className="sm:hidden" /><Send size={12} className="hidden sm:block" /></button>
           </div>
         </div>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-12 py-20 text-left">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-8 sm:gap-12 py-10 sm:py-20 text-left">
         <div>
-          <h5 className="text-[10px] font-black uppercase tracking-[0.3em] text-amber-600 mb-8 italic">Catálogo</h5>
-          <ul className="space-y-4 text-sm text-zinc-400 font-medium">
+          <h5 className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] text-amber-600 mb-5 sm:mb-8 italic">Catálogo</h5>
+          <ul className="space-y-3 sm:space-y-4 text-xs sm:text-sm text-zinc-400 font-medium">
             <li className="hover:text-white cursor-pointer">Streetwear Essentials</li>
             <li className="hover:text-white cursor-pointer">Retro Classics</li>
             <li className="hover:text-white cursor-pointer">Limited Editions</li>
           </ul>
         </div>
         <div>
-          <h5 className="text-[10px] font-black uppercase tracking-[0.3em] text-amber-600 mb-8 italic">Calidad Verzing</h5>
-          <div className="space-y-6">
-            <div className="flex items-start gap-4">
-              <ShieldCheck className="text-amber-600" size={20} />
-              <div><p className="text-xs font-bold uppercase">Triple A Certificado</p></div>
+          <h5 className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] text-amber-600 mb-5 sm:mb-8 italic">Calidad Verzing</h5>
+          <div className="space-y-4 sm:space-y-6">
+            <div className="flex items-start gap-3 sm:gap-4">
+              <ShieldCheck className="text-amber-600 flex-shrink-0" size={16} />
+              <div><p className="text-[10px] sm:text-xs font-bold uppercase">Triple A Certificado</p></div>
             </div>
-            <div className="flex items-start gap-4">
-              <Truck className="text-amber-600" size={20} />
-              <div><p className="text-xs font-bold uppercase">Envío Nacional</p></div>
+            <div className="flex items-start gap-3 sm:gap-4">
+              <Truck className="text-amber-600 flex-shrink-0" size={16} />
+              <div><p className="text-[10px] sm:text-xs font-bold uppercase">Envío Nacional</p></div>
             </div>
           </div>
         </div>
       </div>
-      <div className="pt-12 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-8">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-600 italic">Verzing Footwear Co. • © 2025 All Rights Reserved.</div>
-        <button onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})} className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2 group hover:text-amber-600 transition-colors">Volver arriba <ChevronUp size={14} className="group-hover:-translate-y-1 transition-transform" /></button>
+      <div className="pt-8 sm:pt-12 border-t border-white/5 flex flex-col sm:flex-row justify-between items-center gap-4 sm:gap-8">
+        <div className="text-[8px] sm:text-[10px] font-bold uppercase tracking-widest text-zinc-600 italic text-center sm:text-left">Verzing Footwear Co. • © 2025 All Rights Reserved.</div>
+        <button onClick={() => window.scrollTo({top: 0, behavior: 'smooth'})} className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest flex items-center gap-2 group hover:text-amber-600 transition-colors">Volver arriba <ChevronUp size={12} className="group-hover:-translate-y-1 transition-transform sm:hidden" /><ChevronUp size={14} className="group-hover:-translate-y-1 transition-transform hidden sm:block" /></button>
       </div>
     </div>
   </footer>
@@ -1412,31 +1590,33 @@ const SizeGuide = ({ onBack }) => {
   }, [lightboxOpen]);
 
   return (
-    <div className="max-w-6xl mx-auto p-4 sm:p-10 bg-white rounded-[3rem] border-2 border-neutral-100 shadow-sm animate-in fade-in slide-in-from-bottom-6 duration-700">
+    <div className="max-w-6xl mx-auto p-3 sm:p-6 md:p-10 bg-white rounded-2xl sm:rounded-[3rem] border-2 border-neutral-100 shadow-sm animate-in fade-in slide-in-from-bottom-6 duration-700">
       {/* Header con Botón Volver */}
-      <div className="flex flex-col md:flex-row justify-between items-center mb-12 gap-6">
-        <div className="text-center md:text-left">
-          <h2 className="text-4xl font-black uppercase tracking-tighter italic leading-none">Guía de Tallas</h2>
-          <p className="text-neutral-400 text-[10px] font-bold uppercase tracking-[0.2em] mt-2 flex items-center gap-2">
-            <span className="w-4 h-[1px] bg-amber-600"></span> Ajuste de Precisión Verzing
+      <div className="flex flex-col sm:flex-row justify-between items-center mb-6 sm:mb-12 gap-4 sm:gap-6">
+        <div className="text-center sm:text-left">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-black uppercase tracking-tighter italic leading-none">Guía de Tallas</h2>
+          <p className="text-neutral-400 text-[9px] sm:text-[10px] font-bold uppercase tracking-[0.15em] sm:tracking-[0.2em] mt-1 sm:mt-2 flex items-center justify-center sm:justify-start gap-2">
+            <span className="w-3 sm:w-4 h-[1px] bg-amber-600"></span> Ajuste de Precisión Verzing
           </p>
         </div>
         <button 
           onClick={() => onBack && onBack()} 
-          className="group flex items-center gap-3 px-6 py-3 bg-neutral-50 hover:bg-black hover:text-white rounded-2xl transition-all duration-300 border border-neutral-100"
+          className="group flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-3 bg-neutral-50 hover:bg-black hover:text-white rounded-xl sm:rounded-2xl transition-all duration-300 border border-neutral-100"
         >
-          <span className="text-[10px] font-black uppercase tracking-widest">Cerrar Guía</span>
-          <X size={16} className="group-hover:rotate-90 transition-transform" />
+          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Cerrar Guía</span>
+          <X size={14} className="sm:hidden group-hover:rotate-90 transition-transform" />
+          <X size={16} className="hidden sm:block group-hover:rotate-90 transition-transform" />
         </button>
       </div>
 
-      <div className="grid lg:grid-cols-12 gap-12 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 lg:gap-12 items-start">
         {/* COLUMNA IZQUIERDA: Visualización y Fotos (7/12) */}
-        <div className="lg:col-span-7 space-y-6">
+        <div className="lg:col-span-7 space-y-4 sm:space-y-6">
           {/* Contenedor del Zapato a Escala */}
-          <div className="relative flex flex-col items-center justify-center bg-neutral-50 rounded-[2.5rem] p-10 h-[450px] border border-neutral-100 overflow-hidden shadow-inner">
-            <div className="absolute top-6 left-6 flex items-center gap-2 text-[9px] font-black uppercase text-amber-600 bg-white/80 backdrop-blur px-3 py-1.5 rounded-lg shadow-sm">
-              <Maximize2 size={12} /> Escala Real Relativa
+          <div className="relative flex flex-col items-center justify-center bg-neutral-50 rounded-2xl sm:rounded-[2.5rem] p-4 sm:p-6 md:p-10 h-[280px] sm:h-[350px] md:h-[450px] border border-neutral-100 overflow-hidden shadow-inner">
+            <div className="absolute top-3 left-3 sm:top-6 sm:left-6 flex items-center gap-1.5 sm:gap-2 text-[8px] sm:text-[9px] font-black uppercase text-amber-600 bg-white/80 backdrop-blur px-2 sm:px-3 py-1 sm:py-1.5 rounded-md sm:rounded-lg shadow-sm">
+              <Maximize2 size={10} className="sm:hidden" />
+              <Maximize2 size={12} className="hidden sm:block" /> Escala Real Relativa
             </div>
             
             <div 
@@ -1446,28 +1626,28 @@ const SizeGuide = ({ onBack }) => {
               <img 
                 src="https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=800" 
                 alt="Escala" 
-                className="w-full drop-shadow-[0_35px_35px_rgba(0,0,0,0.15)] grayscale hover:grayscale-0 transition-all duration-500 cursor-crosshair"
+                className="w-full drop-shadow-[0_20px_20px_rgba(0,0,0,0.12)] sm:drop-shadow-[0_35px_35px_rgba(0,0,0,0.15)] grayscale hover:grayscale-0 transition-all duration-500 cursor-crosshair"
                 style={{ filter: imgFilter, transition: 'filter 0.5s ease' }}
               />
               {/* Regla Inferior */}
-              <div className="w-full h-[2px] bg-black mt-6 relative">
-                <div className="absolute -left-0.5 -top-1 w-1 h-3 bg-black"></div>
-                <div className="absolute -right-0.5 -top-1 w-1 h-3 bg-black"></div>
-                <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center">
-                  <span className="text-[11px] font-black tracking-tighter bg-black text-white px-3 py-1 rounded-full">{currentMeasure.cm} CM</span>
+              <div className="w-full h-[2px] bg-black mt-4 sm:mt-6 relative">
+                <div className="absolute -left-0.5 -top-1 w-1 h-2 sm:h-3 bg-black"></div>
+                <div className="absolute -right-0.5 -top-1 w-1 h-2 sm:h-3 bg-black"></div>
+                <div className="absolute -bottom-7 sm:-bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center">
+                  <span className="text-[10px] sm:text-[11px] font-black tracking-tighter bg-black text-white px-2 sm:px-3 py-0.5 sm:py-1 rounded-full">{currentMeasure.cm} CM</span>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* GALERÍA DE 2 IMÁGENES: Bien distribuidas (usar assets locales en src/assets/Tallas) */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* GALERÍA DE 2 IMÁGENES */}
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
             {[Tabladetallas, Comomedir].map((src, idx) => (
-              <div key={idx} className="group relative h-56 md:h-64 rounded-[2rem] overflow-hidden border border-neutral-100 shadow-sm cursor-zoom-in flex items-center justify-center bg-neutral-50">
+              <div key={idx} className="group relative h-36 sm:h-48 md:h-56 lg:h-64 rounded-xl sm:rounded-2xl md:rounded-[2rem] overflow-hidden border border-neutral-100 shadow-sm cursor-zoom-in flex items-center justify-center bg-neutral-50">
                 <img
                   src={src}
                   alt={idx === 0 ? 'Tabla de tallas' : 'Cómo medir'}
-                  className="w-full h-full object-contain p-4 group-hover:scale-105 transition-transform duration-500"
+                  className="w-full h-full object-contain p-2 sm:p-4 group-hover:scale-105 transition-transform duration-500"
                   onClick={() => { setLightboxSrc(src); setLightboxOpen(true); }}
                 />
                 <div className="absolute inset-0 bg-black/6 group-hover:bg-transparent transition-colors pointer-events-none"></div>
@@ -1477,40 +1657,43 @@ const SizeGuide = ({ onBack }) => {
 
           {/* Lightbox modal para ampliar imagen */}
           {lightboxOpen && (
-            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-2 sm:p-4">
               <div className="absolute inset-0 bg-black/80" onClick={() => setLightboxOpen(false)}></div>
               <div className="relative max-w-4xl w-full z-50">
-                <button onClick={() => setLightboxOpen(false)} className="absolute top-3 right-3 z-50 p-2 bg-white rounded-full"><X size={20} /></button>
-                <img src={lightboxSrc} alt="Ampliada" className="w-full max-h-[90vh] object-contain rounded-xl" />
+                <button onClick={() => setLightboxOpen(false)} className="absolute top-2 right-2 sm:top-3 sm:right-3 z-50 p-1.5 sm:p-2 bg-white rounded-full">
+                  <X size={16} className="sm:hidden" />
+                  <X size={20} className="hidden sm:block" />
+                </button>
+                <img src={lightboxSrc} alt="Ampliada" className="w-full max-h-[85vh] sm:max-h-[90vh] object-contain rounded-lg sm:rounded-xl" />
               </div>
             </div>
           )}
         </div>
 
         {/* COLUMNA DERECHA: Controles (5/12) */}
-        <div className="lg:col-span-5 space-y-8 bg-neutral-50/50 p-8 rounded-[2.5rem] border border-neutral-100">
+        <div className="lg:col-span-5 space-y-5 sm:space-y-8 bg-neutral-50/50 p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-[2.5rem] border border-neutral-100">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400 mb-6 text-center">Selecciona Categoría</p>
-            <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-neutral-100">
+            <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-neutral-400 mb-4 sm:mb-6 text-center">Selecciona Categoría</p>
+            <div className="flex bg-white p-1 sm:p-1.5 rounded-xl sm:rounded-2xl shadow-sm border border-neutral-100">
               <button 
                 onClick={() => { setGender('men'); setSelectedSize(40); }}
-                className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${gender === 'men' ? 'bg-black text-white shadow-lg' : 'text-neutral-400 hover:text-black'}`}
+                className={`flex-1 py-3 sm:py-4 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-[0.15em] sm:tracking-[0.2em] transition-all ${gender === 'men' ? 'bg-black text-white shadow-lg' : 'text-neutral-400 hover:text-black'}`}
               >Hombres</button>
               <button 
                 onClick={() => { setGender('women'); setSelectedSize(37); }}
-                className={`flex-1 py-4 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${gender === 'women' ? 'bg-black text-white shadow-lg' : 'text-neutral-400 hover:text-black'}`}
+                className={`flex-1 py-3 sm:py-4 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-[0.15em] sm:tracking-[0.2em] transition-all ${gender === 'women' ? 'bg-black text-white shadow-lg' : 'text-neutral-400 hover:text-black'}`}
               >Mujeres</button>
             </div>
           </div>
 
           <div>
-            <label className="text-[10px] font-black uppercase tracking-widest mb-6 block text-neutral-400 text-center">Talla Europea (EU)</label>
-            <div className="grid grid-cols-4 gap-3">
+            <label className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest mb-4 sm:mb-6 block text-neutral-400 text-center">Talla Europea (EU)</label>
+            <div className="grid grid-cols-4 gap-2 sm:gap-3">
               {sizeData[gender].map((item) => (
                 <button
                   key={item.eu}
                   onClick={() => setSelectedSize(item.eu)}
-                  className={`py-5 rounded-2xl text-sm font-black transition-all border-2 ${selectedSize === item.eu ? 'border-amber-600 bg-amber-600 text-white scale-105 shadow-md' : 'border-white bg-white hover:border-neutral-200 shadow-sm'}`}
+                  className={`py-3 sm:py-5 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-black transition-all border-2 ${selectedSize === item.eu ? 'border-amber-600 bg-amber-600 text-white scale-105 shadow-md' : 'border-white bg-white hover:border-neutral-200 shadow-sm'}`}
                 >
                   {item.eu}
                 </button>
@@ -1518,21 +1701,22 @@ const SizeGuide = ({ onBack }) => {
             </div>
           </div>
 
-          <div className="bg-white p-8 rounded-[2rem] border border-neutral-100 shadow-sm relative overflow-hidden group">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-amber-50 rounded-bl-full -mr-10 -mt-10 transition-all group-hover:bg-amber-100"></div>
+          <div className="bg-white p-4 sm:p-6 md:p-8 rounded-xl sm:rounded-2xl md:rounded-[2rem] border border-neutral-100 shadow-sm relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-16 sm:w-24 h-16 sm:h-24 bg-amber-50 rounded-bl-full -mr-6 sm:-mr-10 -mt-6 sm:-mt-10 transition-all group-hover:bg-amber-100"></div>
             <div className="relative z-10">
-              <p className="text-[10px] font-black uppercase tracking-widest text-amber-600 mb-2">Medida Interna</p>
-              <div className="flex items-baseline gap-2">
-                <span className="text-5xl font-black tracking-tighter">{currentMeasure.cm}</span>
-                <span className="text-lg font-bold text-neutral-400 uppercase">cm</span>
+              <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-amber-600 mb-1 sm:mb-2">Medida Interna</p>
+              <div className="flex items-baseline gap-1 sm:gap-2">
+                <span className="text-3xl sm:text-4xl md:text-5xl font-black tracking-tighter">{currentMeasure.cm}</span>
+                <span className="text-sm sm:text-lg font-bold text-neutral-400 uppercase">cm</span>
               </div>
-              <div className="mt-6 flex items-center gap-3 text-[9px] font-bold uppercase text-neutral-500 bg-neutral-50 p-3 rounded-xl">
-                <ShieldCheck size={14} className="text-amber-600" /> Ajuste Sugerido Verzing
+              <div className="mt-4 sm:mt-6 flex items-center gap-2 sm:gap-3 text-[8px] sm:text-[9px] font-bold uppercase text-neutral-500 bg-neutral-50 p-2 sm:p-3 rounded-lg sm:rounded-xl">
+                <ShieldCheck size={12} className="text-amber-600 sm:hidden" />
+                <ShieldCheck size={14} className="text-amber-600 hidden sm:block" /> Ajuste Sugerido Verzing
               </div>
             </div>
           </div>
           
-          <button className="w-full bg-black text-white py-6 rounded-2xl text-[10px] font-black uppercase tracking-[0.3em] hover:bg-amber-600 transition-all shadow-xl shadow-black/5">
+          <button className="w-full bg-black text-white py-4 sm:py-6 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] hover:bg-amber-600 transition-all shadow-xl shadow-black/5">
             Confirmar Disponibilidad
           </button>
         </div>
@@ -1580,8 +1764,37 @@ export default function App() {
   const [isHeaderSticky, setIsHeaderSticky] = useState(false);
   const [activeTab, setActiveTab] = useState('shop');
 
+  // CMS texts loaded from Firestore (or defaults)
+  const [cmsTextos, setCmsTextos] = useState(DEFAULT_TEXTOS);
+
   // Seed admin user on first run
   useEffect(() => { seedAdmin(); }, []);
+
+  // Load textos_web from Firestore (if available) or from localStorage as fallback
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        if (usingFirestore) {
+          const cfgRef = doc(db, 'configuracion', 'textos_web');
+          const snap = await getDoc(cfgRef);
+          if (snap && snap.exists()) {
+            mounted && setCmsTextos({ ...DEFAULT_TEXTOS, ...snap.data() });
+            return;
+          }
+        }
+        // fallback: try localStorage
+        const saved = localStorage.getItem('verzing_textos');
+        if (saved) {
+          mounted && setCmsTextos({ ...DEFAULT_TEXTOS, ...JSON.parse(saved) });
+        }
+      } catch (err) {
+        console.warn('Error loading textos_web:', err);
+      }
+    };
+    load();
+    return () => { mounted = false; };
+  }, [usingFirestore]);
 
   // Broadcast channel ref for real-time updates across tabs
   const bcRef = useRef(null);
@@ -1898,13 +2111,13 @@ export default function App() {
 
       {activeTab === 'shop' && (
         <>
-          <Hero onOpenAssistant={() => setIsAssistantOpen(true)} userRole={userRole} />
+          <Hero onOpenAssistant={() => setIsAssistantOpen(true)} userRole={userRole} cmsTextos={cmsTextos} />
 
           {/* Sección de Promociones */}
           <PromoSection products={products} onProductClick={setSelectedProduct} />
 
           {userRole === 'admin' && (
-            <AdminPanel products={products} setProducts={setProducts} onNotify={(msg) => handleNotify(msg)} createProduct={createProduct} updateProduct={updateProduct} deleteProduct={deleteProduct} usingFirestore={usingFirestore} migrateProductsToFirestore={migrateProductsToFirestore} />
+            <AdminPanel products={products} setProducts={setProducts} onNotify={(msg) => handleNotify(msg)} createProduct={createProduct} updateProduct={updateProduct} deleteProduct={deleteProduct} usingFirestore={usingFirestore} migrateProductsToFirestore={migrateProductsToFirestore} cmsTextos={cmsTextos} setCmsTextos={setCmsTextos} />
           )}
 
           <CatalogSection 
@@ -1915,6 +2128,10 @@ export default function App() {
             activeGender={activeGender} setActiveGender={setActiveGender}
           />
         </>
+      )}
+
+      {activeTab === 'about' && (
+        <AboutUs cmsTextos={cmsTextos} />
       )}
 
       {activeTab === 'sizes' && (
