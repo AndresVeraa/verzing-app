@@ -954,8 +954,8 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
   return (
     <>
       {/* NAVBAR PRINCIPAL - GLASSMORPHISM */}
-      <nav className={`fixed top-0 w-full z-[100] transition-all duration-500 ${isScrolled ? 'bg-white/70 backdrop-blur-xl shadow-lg shadow-black/5' : 'bg-white/95'}`}>
-        <div className="h-16 md:h-20 flex items-center justify-between px-4 sm:px-6 max-w-7xl mx-auto">
+      <nav className={`fixed top-0 left-0 right-0 z-[100] transition-all duration-500 ${isScrolled ? 'bg-white/70 backdrop-blur-xl shadow-lg shadow-black/5' : 'bg-white'}`}>
+        <div className="h-14 md:h-20 flex items-center justify-between px-3 sm:px-6 max-w-7xl mx-auto">
           {/* Logo con identidad de marca */}
           <div 
             className="flex items-center gap-2 cursor-pointer group" 
@@ -1289,7 +1289,19 @@ const ProductCard = ({ product, onClick }) => (
   </div>
 );
 
-const CatalogSection = ({ products, onProductClick, activeBrand, setActiveBrand, activeStyle, setActiveStyle, activeGender, setActiveGender }) => {
+// Skeleton de carga para productos
+const ProductSkeleton = () => (
+  <div className="group animate-pulse">
+    <div className="aspect-square rounded-3xl bg-neutral-200"></div>
+    <div className="mt-4 space-y-2">
+      <div className="h-3 bg-neutral-200 rounded w-1/3"></div>
+      <div className="h-5 bg-neutral-200 rounded w-3/4"></div>
+      <div className="h-4 bg-neutral-200 rounded w-1/2"></div>
+    </div>
+  </div>
+);
+
+const CatalogSection = ({ products, onProductClick, activeBrand, setActiveBrand, activeStyle, setActiveStyle, activeGender, setActiveGender, isLoading }) => {
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
       const matchBrand = activeBrand === 'Todas' || p.brand === activeBrand;
@@ -1355,9 +1367,18 @@ const CatalogSection = ({ products, onProductClick, activeBrand, setActiveBrand,
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
-          {filteredProducts.map((p) => (
-            <ProductCard key={p.id} product={p} onClick={onProductClick} />
-          ))}
+          {isLoading ? (
+            // Mostrar 6 skeletons mientras carga
+            [...Array(6)].map((_, i) => <ProductSkeleton key={i} />)
+          ) : filteredProducts.length > 0 ? (
+            filteredProducts.map((p) => (
+              <ProductCard key={p.id} product={p} onClick={onProductClick} />
+            ))
+          ) : (
+            <div className="col-span-full text-center py-16">
+              <p className="text-neutral-400 font-bold text-sm">No hay productos con estos filtros</p>
+            </div>
+          )}
         </div>
       </div>
     </section>
@@ -1882,6 +1903,7 @@ export default function App() {
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [isHeaderSticky, setIsHeaderSticky] = useState(false);
   const [activeTab, setActiveTab] = useState('shop');
+  const [isLoading, setIsLoading] = useState(true); // Estado de carga para productos
 
   // CMS texts loaded from Firestore (or defaults)
   const [cmsTextos, setCmsTextos] = useState(DEFAULT_TEXTOS);
@@ -1945,7 +1967,12 @@ export default function App() {
 
   // If Firestore is enabled, subscribe to the productos collection in real time
   useEffect(() => {
-    if (!usingFirestore) return;
+    if (!usingFirestore) {
+      // Si no usa Firestore, los productos ya están cargados desde localStorage
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
     const q = query(collection(db, 'productos'), orderBy('createdAt', 'desc'));
     const unsub = onSnapshot(q, (snap) => {
       // Normalize data so Firestore doc ID always wins (over any id in the body)
@@ -1956,9 +1983,11 @@ export default function App() {
       // Replace local state with authoritative Firestore data
       console.log('onSnapshot: received', unique.length, 'productos');
       setProducts(unique);
+      setIsLoading(false); // Datos listos, ocultar skeletons
     }, (err) => {
       // eslint-disable-next-line no-console
       console.error('Firestore onSnapshot error', err);
+      setIsLoading(false); // Incluso en error, ocultar loading
     });
     return () => unsub();
   }, [usingFirestore]);
@@ -2245,6 +2274,7 @@ export default function App() {
             activeBrand={activeBrand} setActiveBrand={setActiveBrand}
             activeStyle={activeStyle} setActiveStyle={setActiveStyle}
             activeGender={activeGender} setActiveGender={setActiveGender}
+            isLoading={isLoading}
           />
         </>
       )}
@@ -2266,12 +2296,6 @@ export default function App() {
       {selectedProduct && <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} />}
       <AIAssistant isOpen={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} products={products} />
       <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} onLogin={(user) => { handleLogin(user); setIsLoginOpen(false); }} />
-
-      {!isAssistantOpen && (
-        <button onClick={() => setIsAssistantOpen(true)} className="fixed bottom-10 right-10 z-[40] bg-black text-white p-5 rounded-full shadow-2xl hover:bg-amber-600 transition-all hover:scale-110 active:scale-95 group">
-          <Sparkles size={24} className="group-hover:animate-spin" />
-        </button>
-      )}
     </div>
   );
 }
