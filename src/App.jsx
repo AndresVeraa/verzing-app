@@ -1291,15 +1291,56 @@ const HeroSkeleton = () => (
 );
 
 const Hero = ({ onOpenAssistant, cmsTextos, heroImage, isLoadingHero }) => {
-  const { dropText, titleMain, subtitle } = cmsTextos || DEFAULT_TEXTOS;
+  const textos = cmsTextos || DEFAULT_TEXTOS;
+  const { dropText, titleMain, subtitle } = textos;
   
-  // Si no hay imagen o está cargando, mostrar skeleton
-  const showSkeleton = !heroImage || isLoadingHero;
+  // Si no hay imagen, no hay textos, o está cargando, mostrar skeleton
+  const showSkeleton = isLoadingHero || !heroImage || !cmsTextos;
+  
+  // Skeleton completo para el Hero
+  if (showSkeleton) {
+    return (
+      <section className="relative min-h-screen flex items-center pt-24 sm:pt-20 px-6 bg-[#FDFCFB] overflow-hidden">
+        <div className="max-w-7xl mx-auto w-full grid md:grid-cols-2 gap-16 items-center text-left">
+          {/* Skeleton de textos */}
+          <div className="animate-pulse z-10">
+            <div className="flex items-center gap-2 mb-6">
+              <div className="w-8 h-[1px] bg-neutral-300"></div>
+              <div className="h-3 bg-neutral-200 rounded w-48"></div>
+            </div>
+            <div className="space-y-3 mb-6 sm:mb-10">
+              <div className="h-10 sm:h-14 md:h-20 bg-neutral-200 rounded-lg w-full"></div>
+              <div className="h-10 sm:h-14 md:h-20 bg-neutral-200 rounded-lg w-4/5"></div>
+              <div className="h-10 sm:h-14 md:h-20 bg-neutral-200 rounded-lg w-3/5"></div>
+            </div>
+            <div className="h-4 bg-neutral-200 rounded w-full max-w-sm mb-2"></div>
+            <div className="h-4 bg-neutral-200 rounded w-3/4 max-w-sm mb-6"></div>
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="h-12 sm:h-14 bg-neutral-200 rounded w-44"></div>
+              <div className="h-12 sm:h-14 bg-neutral-200 rounded w-40"></div>
+            </div>
+            {/* Mobile image skeleton */}
+            <div className="md:hidden mt-8 w-full flex justify-center">
+              <div className="w-11/12 bg-white p-2 rounded-2xl shadow-2xl">
+                <div className="aspect-[4/5] bg-neutral-200 rounded-xl"></div>
+              </div>
+            </div>
+          </div>
+          {/* Desktop image skeleton */}
+          <div className="relative hidden md:flex items-center justify-center">
+            <div className="w-full bg-white p-2 rounded-[3rem] shadow-2xl">
+              <div className="aspect-[4/5] bg-neutral-200 rounded-[2.5rem]"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
   
   return (
   <section className="relative min-h-screen flex items-center pt-24 sm:pt-20 px-6 bg-[#FDFCFB] overflow-hidden">
     <div className="max-w-7xl mx-auto w-full grid md:grid-cols-2 gap-16 items-center text-left">
-      <div className="animate-in fade-in slide-in-from-bottom-8 duration-1000 z-10">
+      <div className="animate-in fade-in slide-in-from-bottom-8 duration-700 z-10">
         <h4 className="text-amber-600 font-bold tracking-[0.5em] text-[10px] uppercase mb-6 flex items-center gap-2">
           <span className="w-8 h-[1px] bg-amber-600"></span>
           {dropText}
@@ -1331,32 +1372,20 @@ const Hero = ({ onOpenAssistant, cmsTextos, heroImage, isLoadingHero }) => {
 
         {/* Small-screen hero image */}
         <div className="md:hidden mt-8 w-full flex justify-center">
-          {showSkeleton ? (
-            <div className="w-11/12 bg-white p-2 rounded-2xl shadow-2xl animate-pulse">
-              <div className="aspect-[4/5] bg-neutral-200 rounded-xl"></div>
-            </div>
-          ) : (
-            <div className="w-11/12 bg-white p-2 rounded-2xl shadow-2xl animate-in fade-in duration-700">
-              <img src={heroImage} alt="Verzing" className="w-full h-auto object-contain rounded-xl transition-all duration-700 ease-out" />
-            </div>
-          )}
+          <div className="w-11/12 bg-white p-2 rounded-2xl shadow-2xl animate-in fade-in duration-700">
+            <img src={heroImage} alt="Verzing" className="w-full h-auto object-contain rounded-xl transition-all duration-700 ease-out" />
+          </div>
         </div> 
       </div>
       <div className="relative hidden md:flex items-center justify-center">
-        {showSkeleton ? (
-          <div className="w-full bg-white p-2 rounded-[3rem] shadow-2xl animate-pulse">
-            <div className="aspect-[4/5] bg-neutral-200 rounded-[2.5rem]"></div>
-          </div>
-        ) : (
-          <div className="w-full relative bg-white p-2 rounded-[3rem] shadow-2xl animate-in fade-in duration-700">
-            <img 
-              src={heroImage} 
-              alt="Verzing Sneakers Hero" 
-              className="w-full h-auto object-contain rounded-[2.5rem] transition-all duration-700 ease-out"
-            />
-            <div className="absolute inset-2 bg-gradient-to-t from-black/10 to-transparent rounded-[2.5rem] pointer-events-none"></div>
-          </div>
-        )}
+        <div className="w-full relative bg-white p-2 rounded-[3rem] shadow-2xl animate-in fade-in duration-700">
+          <img 
+            src={heroImage} 
+            alt="Verzing Sneakers Hero" 
+            className="w-full h-auto object-contain rounded-[2.5rem] transition-all duration-700 ease-out"
+          />
+          <div className="absolute inset-2 bg-gradient-to-t from-black/10 to-transparent rounded-[2.5rem] pointer-events-none"></div>
+        </div>
       </div>
     </div>
   </section>
@@ -2047,52 +2076,73 @@ export default function App() {
   const [isHeaderSticky, setIsHeaderSticky] = useState(false);
   const [activeTab, setActiveTab] = useState('shop');
   const [isLoading, setIsLoading] = useState(true); // Estado de carga para productos
-  const [isLoadingHero, setIsLoadingHero] = useState(true); // Estado de carga para imagen del Hero
+  const [isLoadingHero, setIsLoadingHero] = useState(true); // Estado de carga para Hero (imagen + textos)
 
-  // CMS texts loaded from Firestore (or defaults)
-  const [cmsTextos, setCmsTextos] = useState(DEFAULT_TEXTOS);
+  // CMS texts loaded from Firestore (or defaults) - Inicializado como null hasta verificar storage
+  const [cmsTextos, setCmsTextos] = useState(null);
   
   // Hero image URL (editable desde AdminPanel) - Inicializado como null hasta verificar storage
   const DEFAULT_HERO_IMAGE = 'https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&q=80&w=1000';
   const [heroImage, setHeroImage] = useState(null);
 
-  // Cargar heroImage desde localStorage o Firestore al montar
+  // Cargar heroImage y cmsTextos desde localStorage o Firestore al montar
   useEffect(() => {
-    const loadHeroImage = async () => {
+    const loadHeroData = async () => {
       setIsLoadingHero(true);
+      
+      // Delay mínimo para que el skeleton sea visible (mejor UX)
+      const minDelay = new Promise(resolve => setTimeout(resolve, 600));
+      
+      let loadedTextos = DEFAULT_TEXTOS;
+      let loadedImage = DEFAULT_HERO_IMAGE;
+      
       try {
-        // Primero verificar localStorage
-        const savedLocal = localStorage.getItem('verzing_hero_image');
-        if (savedLocal) {
-          setHeroImage(savedLocal);
-          setIsLoadingHero(false);
-          return;
+        // Cargar textos desde localStorage primero
+        const savedTextos = localStorage.getItem('verzing_textos');
+        if (savedTextos) {
+          loadedTextos = { ...DEFAULT_TEXTOS, ...JSON.parse(savedTextos) };
         }
         
-        // Si no hay en localStorage, verificar Firestore
+        // Cargar imagen desde localStorage primero
+        const savedImage = localStorage.getItem('verzing_hero_image');
+        if (savedImage) {
+          loadedImage = savedImage;
+        }
+        
+        // Si usa Firestore, verificar si hay datos más recientes
         if (usingFirestore) {
+          // Cargar textos desde Firestore
+          const cfgRef = doc(db, 'configuracion', 'textos_web');
+          const snap = await getDoc(cfgRef);
+          if (snap && snap.exists()) {
+            loadedTextos = { ...DEFAULT_TEXTOS, ...snap.data() };
+          }
+          
+          // Cargar imagen desde Firestore
           const heroRef = doc(db, 'configuracion', 'hero');
-          const snap = await getDoc(heroRef);
-          if (snap && snap.exists() && snap.data().imageUrl) {
-            const firestoreImage = snap.data().imageUrl;
-            setHeroImage(firestoreImage);
+          const heroSnap = await getDoc(heroRef);
+          if (heroSnap && heroSnap.exists() && heroSnap.data().imageUrl) {
+            loadedImage = heroSnap.data().imageUrl;
             // Guardar en localStorage para próximas cargas
-            localStorage.setItem('verzing_hero_image', firestoreImage);
-            setIsLoadingHero(false);
-            return;
+            localStorage.setItem('verzing_hero_image', loadedImage);
           }
         }
         
-        // Si no hay en ningún storage, usar imagen por defecto
-        setHeroImage(DEFAULT_HERO_IMAGE);
+        // Esperar el delay mínimo antes de mostrar
+        await minDelay;
+        
+        setCmsTextos(loadedTextos);
+        setHeroImage(loadedImage);
       } catch (err) {
-        console.error('Error loading hero image:', err);
+        console.error('Error loading hero data:', err);
+        await minDelay;
+        setCmsTextos(DEFAULT_TEXTOS);
         setHeroImage(DEFAULT_HERO_IMAGE);
       } finally {
         setIsLoadingHero(false);
       }
     };
-    loadHeroImage();
+    loadHeroData();
   }, [usingFirestore]);
 
   // Función para actualizar heroImage desde AdminPanel usando FileReader
@@ -2123,42 +2173,6 @@ export default function App() {
 
   // Seed admin user on first run
   useEffect(() => { seedAdmin(); }, []);
-
-  // Load textos_web from Firestore (if available) or from localStorage as fallback
-  useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      try {
-        if (usingFirestore) {
-          const cfgRef = doc(db, 'configuracion', 'textos_web');
-          const snap = await getDoc(cfgRef);
-          if (snap && snap.exists()) {
-            mounted && setCmsTextos({ ...DEFAULT_TEXTOS, ...snap.data() });
-          }
-          // Cargar heroImage desde documento 'hero'
-          const heroRef = doc(db, 'configuracion', 'hero');
-          const heroSnap = await getDoc(heroRef);
-          if (heroSnap && heroSnap.exists() && heroSnap.data().imageUrl) {
-            mounted && setHeroImage(heroSnap.data().imageUrl);
-          }
-          return;
-        }
-        // fallback: try localStorage
-        const saved = localStorage.getItem('verzing_textos');
-        if (saved) {
-          mounted && setCmsTextos({ ...DEFAULT_TEXTOS, ...JSON.parse(saved) });
-        }
-        const savedHero = localStorage.getItem('verzing_hero_image');
-        if (savedHero) {
-          mounted && setHeroImage(savedHero);
-        }
-      } catch (err) {
-        console.warn('Error loading textos_web:', err);
-      }
-    };
-    load();
-    return () => { mounted = false; };
-  }, [usingFirestore]);
 
   // Broadcast channel ref for real-time updates across tabs
   const bcRef = useRef(null);
