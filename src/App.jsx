@@ -930,6 +930,16 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
 
 const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogout, onOpenLogin, usingFirestore, activeTab, setActiveTab }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  // Detectar scroll para efecto glassmorphism
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 20);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const navigateTo = (tab, scrollId = null) => {
     setActiveTab && setActiveTab(tab);
@@ -942,134 +952,184 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
   };
 
   return (
-    <nav className={`fixed top-0 w-full z-[100] pointer-events-none transition-transform duration-300`}>
-      <div className="bg-white border-b border-neutral-100 h-16 md:h-20 flex items-center justify-between px-6 relative z-[101] pointer-events-auto max-w-7xl mx-auto">
-        {/* Logo */}
-        <div 
-          className="text-2xl font-black tracking-tighter cursor-pointer" 
-          onClick={() => navigateTo('shop')}
-        >
-          VERZING<span className="text-amber-600">.CO</span>
-        </div>
-        
-        {/* Escritorio (Sin cambios) */}
-        <div className="hidden md:flex space-x-10 text-[10px] font-bold uppercase tracking-[0.2em]">
-          <button onClick={() => navigateTo('shop', 'catalog')} className="hover:text-amber-600">Catálogo</button>
-          <button onClick={() => navigateTo('about')} className={`hover:text-amber-600 ${activeTab === 'about' ? 'text-amber-600' : ''}`}>Sobre Nosotros</button>
-          <button onClick={onOpenAssistant} className="hover:text-amber-600 flex items-center gap-2">✨ Asistente AI</button>
-          <button 
-            onClick={() => setActiveTab('sizes')}
-            className={`px-4 py-2 rounded-xl ${activeTab === 'sizes' ? 'bg-amber-600 text-white' : 'text-neutral-400'}`}
+    <>
+      {/* NAVBAR PRINCIPAL - GLASSMORPHISM */}
+      <nav className={`fixed top-0 w-full z-[100] transition-all duration-500 ${isScrolled ? 'bg-white/70 backdrop-blur-xl shadow-lg shadow-black/5' : 'bg-white/95'}`}>
+        <div className="h-16 md:h-20 flex items-center justify-between px-4 sm:px-6 max-w-7xl mx-auto">
+          {/* Logo con identidad de marca */}
+          <div 
+            className="flex items-center gap-2 cursor-pointer group" 
+            onClick={() => navigateTo('shop')}
           >
-            Guía de Tallas
-          </button>
-        </div>
+            <div className="w-8 h-8 sm:w-9 sm:h-9 bg-black rounded-lg flex items-center justify-center group-hover:bg-amber-600 transition-colors">
+              <span className="text-white font-black text-sm sm:text-base">V</span>
+            </div>
+            <span className="text-xl sm:text-2xl font-black tracking-tighter">
+              ERZING<span className="text-amber-600">.CO</span>
+            </span>
+          </div>
+          
+          {/* Desktop Navigation */}
+          <div className="hidden md:flex items-center space-x-8 lg:space-x-10">
+            <button 
+              onClick={() => navigateTo('shop', 'catalog')} 
+              className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all hover:text-amber-600 ${activeTab === 'shop' ? 'text-amber-600' : 'text-neutral-700'}`}
+            >
+              Drops
+            </button>
+            <button 
+              onClick={() => navigateTo('about')} 
+              className={`text-[10px] font-black uppercase tracking-[0.2em] transition-all hover:text-amber-600 ${activeTab === 'about' ? 'text-amber-600' : 'text-neutral-700'}`}
+            >
+              Sobre Nosotros
+            </button>
+            <button 
+              onClick={onOpenAssistant} 
+              className="text-[10px] font-black uppercase tracking-[0.2em] transition-all hover:text-amber-600 flex items-center gap-2 text-neutral-700"
+            >
+              <Sparkles size={14} className="text-amber-600" /> Asistente AI
+            </button>
+            <button 
+              onClick={() => setActiveTab('sizes')}
+              className={`text-[10px] font-black uppercase tracking-[0.2em] px-4 py-2 rounded-xl transition-all ${activeTab === 'sizes' ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/30' : 'text-neutral-700 hover:text-amber-600'}`}
+            >
+              Guía de Tallas
+            </button>
+          </div>
 
-        <div className="flex items-center space-x-4">
-          <div className="relative cursor-pointer p-2">
-            <ShoppingCart size={18} />
-            {wishlistCount > 0 && (
-              <span className="absolute top-0 right-0 bg-amber-600 text-white text-[8px] rounded-full w-4 h-4 flex items-center justify-center font-bold">{wishlistCount}</span>
+          {/* Desktop Right Section */}
+          <div className="hidden md:flex items-center space-x-4">
+            <div className="relative cursor-pointer p-2 hover:bg-neutral-100 rounded-full transition-colors">
+              <ShoppingCart size={18} />
+              {wishlistCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-amber-600 text-white text-[8px] rounded-full w-5 h-5 flex items-center justify-center font-black">{wishlistCount}</span>
+              )}
+            </div>
+
+            {userRole ? (
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-bold text-neutral-600 hidden lg:block">{currentUser?.firstName || currentUser?.username}</span>
+                <button 
+                  onClick={onLogout} 
+                  className="bg-rose-50 hover:bg-rose-100 text-rose-500 px-5 py-2.5 rounded-full font-black uppercase text-[9px] tracking-widest transition-all"
+                >
+                  Cerrar Sesión
+                </button>
+              </div>
+            ) : (
+              <button 
+                onClick={onOpenLogin} 
+                className="bg-black hover:bg-amber-600 text-white px-5 py-2.5 rounded-full font-black uppercase text-[9px] tracking-widest transition-all flex items-center gap-2"
+              >
+                <LogIn size={14} /> Ingresar
+              </button>
             )}
           </div>
 
-          {/* Desktop login/logout */}
-          {userRole ? (
-            <div className="hidden md:flex items-center gap-3">
-              <span className="text-sm font-bold text-neutral-600">{currentUser?.firstName || currentUser?.username}</span>
-              <button onClick={onLogout} className="hidden md:inline-flex bg-rose-50 text-rose-500 px-4 py-2 rounded-2xl font-black uppercase text-[10px] tracking-widest">Cerrar Sesión</button>
+          {/* Mobile: Solo carrito y hamburguesa */}
+          <div className="flex md:hidden items-center gap-3">
+            <div className="relative cursor-pointer p-2">
+              <ShoppingCart size={18} />
+              {wishlistCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-amber-600 text-white text-[7px] rounded-full w-4 h-4 flex items-center justify-center font-black">{wishlistCount}</span>
+              )}
             </div>
-          ) : (
-            <button onClick={onOpenLogin} className="hidden md:inline-flex bg-black text-white px-4 py-2 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center gap-2">
-              <LogIn size={14} /> Iniciar Sesión
+            
+            {/* Login/Logout circular en móvil */}
+            {userRole ? (
+              <button 
+                onClick={onLogout}
+                className="w-9 h-9 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center hover:bg-rose-100 transition-colors"
+              >
+                <LogOut size={16} />
+              </button>
+            ) : (
+              <button 
+                onClick={onOpenLogin}
+                className="w-9 h-9 bg-black text-white rounded-full flex items-center justify-center hover:bg-amber-600 transition-colors"
+              >
+                <LogIn size={16} />
+              </button>
+            )}
+
+            <button 
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)} 
+              className="p-2 bg-neutral-100 hover:bg-neutral-200 rounded-xl transition-colors"
+            >
+              {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
-          )}
-
-          {/* Botón Hamburguesa Móvil */}
-          <button 
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)} 
-            className="md:hidden p-2 bg-neutral-100 rounded-xl transition-colors"
-          >
-            {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
+          </div>
         </div>
-      </div>
+      </nav>
 
-      {/* MENÚ MÓVIL: Despliegue de ARRIBA hacia ABAJO */}
+      {/* MENÚ MÓVIL FULLSCREEN */}
       <div className={`
-        md:hidden fixed inset-0 bg-white transition-all duration-500 ease-in-out transform
-        ${mobileMenuOpen ? 'translate-y-0 opacity-100 z-[200] pointer-events-auto' : '-translate-y-full opacity-0 -z-10 pointer-events-none'}
+        md:hidden fixed inset-0 bg-white/95 backdrop-blur-xl transition-all duration-500 ease-out z-[150]
+        ${mobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}
       `}>
-        <div className="p-8 flex flex-col gap-6 bg-white h-full pt-24 pointer-events-auto"> {/* pt-24 para que los botones no queden tras la barra de arriba */}
-          {/* Botón de Cerrar (Opcional pero recomendado para UX) */}
+        <div className="p-6 flex flex-col h-full pt-20">
           <button 
             onClick={() => setMobileMenuOpen(false)}
-            className="absolute top-6 right-6 p-2 bg-neutral-100 rounded-full"
+            className="absolute top-5 right-5 p-2.5 bg-neutral-100 hover:bg-neutral-200 rounded-full transition-colors"
           >
-            <X size={24} />
+            <X size={22} />
           </button>
 
-          <button 
-            onClick={() => {
-              setActiveTab('shop');
-              setMobileMenuOpen(false);
-              // Si tienes una función scroll para ir al catálogo:
-              document.getElementById('catalog')?.scrollIntoView({ behavior: 'smooth' });
-            }}
-            className={`flex items-center justify-between p-6 rounded-3xl text-sm font-black uppercase tracking-widest ${activeTab === 'shop' ? 'bg-black text-white shadow-xl' : 'bg-neutral-50 text-neutral-800'}`}
-          >
-            Catálogo <TrendingUp size={18} />
-          </button>
+          <div className="space-y-3 flex-1">
+            <button 
+              onClick={() => {
+                setActiveTab('shop');
+                setMobileMenuOpen(false);
+                document.getElementById('catalog')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className={`w-full flex items-center justify-between p-5 rounded-2xl text-sm font-black uppercase tracking-[0.15em] transition-all ${activeTab === 'shop' ? 'bg-black text-white' : 'bg-neutral-50 text-neutral-800 active:bg-neutral-100'}`}
+            >
+              Drops <TrendingUp size={18} />
+            </button>
 
-          {/* FIX: Aseguramos que onOpenAssistant se llame correctamente */}
-          <button 
-            onClick={() => { 
-              setMobileMenuOpen(false);
-              setTimeout(() => onOpenAssistant(), 300); // Pequeño delay para que cierre el menú primero
-            }}
-            className="flex items-center justify-between p-6 rounded-3xl text-sm font-black uppercase tracking-widest bg-neutral-50 text-neutral-800 active:scale-95 transition-transform"
-          >
-            Asistente AI <Sparkles size={18} />
-          </button>
+            <button 
+              onClick={() => {
+                setActiveTab('about');
+                setMobileMenuOpen(false);
+              }}
+              className={`w-full flex items-center justify-between p-5 rounded-2xl text-sm font-black uppercase tracking-[0.15em] transition-all ${activeTab === 'about' ? 'bg-amber-600 text-white' : 'bg-neutral-50 text-neutral-800 active:bg-neutral-100'}`}
+            >
+              Sobre Nosotros <User size={18} />
+            </button>
 
-          <button 
-            onClick={() => {
-              setActiveTab('sizes');
-              setMobileMenuOpen(false);
-            }}
-            className={`flex items-center justify-between p-6 rounded-3xl text-sm font-black uppercase tracking-widest ${activeTab === 'sizes' ? 'bg-amber-600 text-white' : 'bg-neutral-50 text-neutral-800'} active:scale-95 transition-transform`}
-          >
-            Guía de Tallas <Maximize2 size={18} />
-          </button>
+            <button 
+              onClick={() => {
+                setActiveTab('sizes');
+                setMobileMenuOpen(false);
+              }}
+              className={`w-full flex items-center justify-between p-5 rounded-2xl text-sm font-black uppercase tracking-[0.15em] transition-all ${activeTab === 'sizes' ? 'bg-amber-600 text-white' : 'bg-neutral-50 text-neutral-800 active:bg-neutral-100'}`}
+            >
+              Guía de Tallas <Maximize2 size={18} />
+            </button>
+          </div>
 
-          <button 
-            onClick={() => {
-              setActiveTab('about');
-              setMobileMenuOpen(false);
-            }}
-            className={`flex items-center justify-between p-6 rounded-3xl text-sm font-black uppercase tracking-widest ${activeTab === 'about' ? 'bg-amber-600 text-white' : 'bg-neutral-50 text-neutral-800'} active:scale-95 transition-transform`}
-          >
-            Sobre Nosotros <User size={18} />
-          </button>
-
-          {/* Sección inferior con Logout/Login */}
-          <div className="mt-auto pb-10 space-y-8">
-            <div className="flex justify-center gap-8">
-              <Instagram size={24} className="text-neutral-400" />
-              <MessageCircle size={24} className="text-neutral-400" />
+          {/* Footer del menú móvil */}
+          <div className="pt-6 border-t border-neutral-100 space-y-4">
+            <div className="flex justify-center gap-6">
+              <a href="https://www.instagram.com/verzing.co/" target="_blank" rel="noopener noreferrer" className="w-12 h-12 bg-neutral-100 rounded-full flex items-center justify-center hover:bg-black hover:text-white transition-all">
+                <Instagram size={20} />
+              </a>
+              <a href="https://wa.me/3004371955" target="_blank" rel="noopener noreferrer" className="w-12 h-12 bg-neutral-100 rounded-full flex items-center justify-center hover:bg-green-500 hover:text-white transition-all">
+                <MessageCircle size={20} />
+              </a>
             </div>
             
             {currentUser ? (
               <button 
                 onClick={() => { onLogout(); setMobileMenuOpen(false); }} 
-                className="w-full py-5 rounded-2xl bg-rose-50 text-rose-500 font-black uppercase text-[10px] tracking-widest"
+                className="w-full py-4 rounded-2xl bg-rose-50 text-rose-500 font-black uppercase text-[10px] tracking-widest hover:bg-rose-100 transition-colors"
               >
                 Cerrar Sesión
               </button>
             ) : (
               <button 
                 onClick={() => { onOpenLogin(); setMobileMenuOpen(false); }} 
-                className="w-full py-5 rounded-2xl bg-black text-white font-black uppercase text-[10px] tracking-widest shadow-lg"
+                className="w-full py-4 rounded-2xl bg-black text-white font-black uppercase text-[10px] tracking-widest hover:bg-amber-600 transition-colors"
               >
                 Iniciar Sesión
               </button>
@@ -1077,7 +1137,66 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
           </div>
         </div>
       </div>
-    </nav>
+
+      {/* NAVEGACIÓN FLOTANTE INFERIOR - MÓVIL */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-[100] px-4 pb-4 pointer-events-none">
+        <div className="bg-black/90 backdrop-blur-xl rounded-2xl shadow-2xl shadow-black/30 pointer-events-auto">
+          <div className="flex items-center justify-around py-2 relative">
+            {/* Drops */}
+            <button 
+              onClick={() => {
+                setActiveTab('shop');
+                document.getElementById('catalog')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className={`flex flex-col items-center py-2 px-4 rounded-xl transition-all ${activeTab === 'shop' ? 'text-amber-500' : 'text-white/70'}`}
+            >
+              <TrendingUp size={20} />
+              <span className="text-[8px] font-black uppercase tracking-wider mt-1">Drops</span>
+            </button>
+
+            {/* Tallas */}
+            <button 
+              onClick={() => setActiveTab('sizes')}
+              className={`flex flex-col items-center py-2 px-4 rounded-xl transition-all ${activeTab === 'sizes' ? 'text-amber-500' : 'text-white/70'}`}
+            >
+              <Maximize2 size={20} />
+              <span className="text-[8px] font-black uppercase tracking-wider mt-1">Tallas</span>
+            </button>
+
+            {/* Botón Central - Asistente AI (sobresale) */}
+            <div className="absolute left-1/2 -translate-x-1/2 -top-6">
+              <button 
+                onClick={onOpenAssistant}
+                className="w-14 h-14 bg-amber-600 rounded-full flex items-center justify-center shadow-xl shadow-amber-600/40 hover:bg-amber-500 transition-all active:scale-95 ring-4 ring-black/90"
+              >
+                <Sparkles size={24} className="text-white" />
+              </button>
+            </div>
+
+            {/* Spacer para el botón central */}
+            <div className="w-16"></div>
+
+            {/* About */}
+            <button 
+              onClick={() => setActiveTab('about')}
+              className={`flex flex-col items-center py-2 px-4 rounded-xl transition-all ${activeTab === 'about' ? 'text-amber-500' : 'text-white/70'}`}
+            >
+              <User size={20} />
+              <span className="text-[8px] font-black uppercase tracking-wider mt-1">Nosotros</span>
+            </button>
+
+            {/* Menu */}
+            <button 
+              onClick={() => setMobileMenuOpen(true)}
+              className="flex flex-col items-center py-2 px-4 rounded-xl text-white/70 transition-all"
+            >
+              <Menu size={20} />
+              <span className="text-[8px] font-black uppercase tracking-wider mt-1">Menú</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
   );
 };
 
