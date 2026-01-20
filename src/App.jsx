@@ -428,7 +428,6 @@ const LoginModal = ({ isOpen, onClose, onLogin }) => {
             )}
           </div>
         </form>
-        <div className="mt-4 text-[10px] text-neutral-400 text-center">Usuario administrador por defecto: <strong>admin</strong> / <i>admin123</i></div>
       </div>
     </div>
   );
