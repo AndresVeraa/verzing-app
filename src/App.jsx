@@ -21,11 +21,15 @@ import {
   Edit,
   Save,
   Sparkles,
-  Menu
+  Menu,
+  Gift,
+  Check,
+  ChevronRight,
+  Award
 } from 'lucide-react';
 
 import { db, firebaseConfigured } from './firebase';
-import { collection, query, orderBy, onSnapshot, addDoc, setDoc, deleteDoc, doc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, addDoc, setDoc, deleteDoc, doc, serverTimestamp, getDoc, updateDoc } from 'firebase/firestore';
 import AboutUs from './AboutUs';
 
 // Local size-guide assets
@@ -324,6 +328,8 @@ const LoginModal = ({ isOpen, onClose, onLogin }) => {
           return;
         }
         const newUser = await createUser({ username: username.trim(), password, role: 'user', firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(), phone: phone.trim() });
+        // Mostrar aviso de registro exitoso
+        alert(`¡Bienvenido/a ${firstName.trim()}! 🎉\n\nTu cuenta ha sido creada exitosamente.\n\n🎁 Completa la encuesta en "Mi Perfil" para obtener un cupón de 15% OFF en tu primera compra.`);
         onLogin(newUser);
         onClose();
       }
@@ -433,13 +439,397 @@ const LoginModal = ({ isOpen, onClose, onLogin }) => {
   );
 };
 
-const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProduct, deleteProduct, usingFirestore, migrateProductsToFirestore, cmsTextos, setCmsTextos, heroImage, setHeroImage, handleUpdateHero }) => {
+// --- PREGUNTAS DE LA ENCUESTA ---
+const SURVEY_QUESTIONS = [
+  {
+    id: 1,
+    question: "¿Cuál es tu rango de edad?",
+    options: ["18-24 años", "25-34 años", "35-44 años", "45+ años"]
+  },
+  {
+    id: 2,
+    question: "¿Cuál es tu género?",
+    options: ["Hombre", "Mujer", "Prefiero no decir", "Otro"]
+  },
+  {
+    id: 3,
+    question: "¿En qué ciudad vives?",
+    options: ["Bogotá", "Medellín", "Cali", "Barranquilla", "Otra ciudad"]
+  },
+  {
+    id: 4,
+    question: "¿Qué estilo de sneakers prefieres?",
+    options: ["Streetwear/Urban", "Retro/Vintage", "Deportivo", "Casual/Elegante", "Limited Edition"]
+  },
+  {
+    id: 5,
+    question: "¿Cuál es tu marca favorita?",
+    options: ["Nike", "Adidas", "Jordan", "New Balance", "Otra"]
+  },
+  {
+    id: 6,
+    question: "¿Con qué frecuencia compras sneakers?",
+    options: ["Cada mes", "Cada 3 meses", "Cada 6 meses", "Una vez al año", "Ocasionalmente"]
+  },
+  {
+    id: 7,
+    question: "¿Cuánto sueles invertir en un par de sneakers?",
+    options: ["Menos de $300.000", "$300.000 - $500.000", "$500.000 - $800.000", "Más de $800.000"]
+  },
+  {
+    id: 8,
+    question: "¿Qué es lo más importante al comprar sneakers?",
+    options: ["Diseño/Estética", "Comodidad", "Exclusividad", "Precio", "Marca"]
+  },
+  {
+    id: 9,
+    question: "¿Cómo conociste Verzing?",
+    options: ["Instagram", "TikTok", "Recomendación", "Google", "Otro"]
+  },
+  {
+    id: 10,
+    question: "¿Qué tipo de contenido te gustaría ver?",
+    options: ["Lanzamientos exclusivos", "Outfits/Combinaciones", "Historia de sneakers", "Ofertas y promos"]
+  },
+  {
+    id: 11,
+    question: "¿Prefieres comprar online o en tienda física?",
+    options: ["100% Online", "Mayormente online", "Mitad y mitad", "Prefiero tienda física"]
+  },
+  {
+    id: 12,
+    question: "¿Te gustaría recibir notificaciones de drops exclusivos?",
+    options: ["Sí, por WhatsApp", "Sí, por Email", "Sí, ambos", "No, gracias"]
+  }
+];
+
+// --- COMPONENTE DE ENCUESTA ---
+const SurveyModal = ({ isOpen, onClose, onComplete, userProfile }) => {
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setCurrentQuestion(0);
+      setAnswers({});
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const question = SURVEY_QUESTIONS[currentQuestion];
+  const progress = ((currentQuestion + 1) / SURVEY_QUESTIONS.length) * 100;
+
+  const handleAnswer = (answer) => {
+    setAnswers(prev => ({ ...prev, [question.id]: answer }));
+    
+    if (currentQuestion < SURVEY_QUESTIONS.length - 1) {
+      setTimeout(() => setCurrentQuestion(prev => prev + 1), 300);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (Object.keys(answers).length < SURVEY_QUESTIONS.length) {
+      alert('Por favor responde todas las preguntas');
+      return;
+    }
+    
+    setIsSubmitting(true);
+    await onComplete(answers);
+    setIsSubmitting(false);
+    onClose();
+  };
+
+  const isLastQuestion = currentQuestion === SURVEY_QUESTIONS.length - 1;
+  const canSubmit = Object.keys(answers).length === SURVEY_QUESTIONS.length;
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose}></div>
+      <div className="relative bg-white w-full max-w-lg rounded-[2.5rem] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
+        {/* Header con progreso */}
+        <div className="bg-gradient-to-r from-amber-500 to-amber-600 p-6 text-white">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center">
+                <Gift size={24} />
+              </div>
+              <div>
+                <h2 className="text-lg font-black uppercase tracking-tight">¡Obtén 15% OFF!</h2>
+                <p className="text-white/80 text-xs">Completa la encuesta</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-full transition-colors">
+              <X size={20} />
+            </button>
+          </div>
+          
+          {/* Barra de progreso */}
+          <div className="w-full bg-white/30 rounded-full h-2">
+            <div 
+              className="bg-white h-2 rounded-full transition-all duration-500"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <p className="text-white/80 text-[10px] mt-2 uppercase tracking-widest">
+            Pregunta {currentQuestion + 1} de {SURVEY_QUESTIONS.length}
+          </p>
+        </div>
+
+        {/* Contenido de la pregunta */}
+        <div className="p-6">
+          <h3 className="text-xl font-black mb-6 text-center">{question.question}</h3>
+          
+          <div className="space-y-3">
+            {question.options.map((option, idx) => (
+              <button
+                key={idx}
+                onClick={() => handleAnswer(option)}
+                className={`w-full p-4 rounded-2xl text-sm font-bold transition-all border-2 flex items-center justify-between ${
+                  answers[question.id] === option
+                    ? 'bg-amber-50 border-amber-500 text-amber-700'
+                    : 'bg-neutral-50 border-transparent hover:border-neutral-200'
+                }`}
+              >
+                <span>{option}</span>
+                {answers[question.id] === option && <Check size={18} className="text-amber-600" />}
+              </button>
+            ))}
+          </div>
+
+          {/* Navegación */}
+          <div className="flex items-center justify-between mt-8">
+            <button
+              onClick={() => setCurrentQuestion(prev => Math.max(0, prev - 1))}
+              disabled={currentQuestion === 0}
+              className={`px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all ${
+                currentQuestion === 0 
+                  ? 'text-neutral-300 cursor-not-allowed' 
+                  : 'text-neutral-600 hover:bg-neutral-100'
+              }`}
+            >
+              Anterior
+            </button>
+
+            {isLastQuestion && canSubmit ? (
+              <button
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+                className="bg-amber-600 text-white px-8 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-amber-700 transition-all flex items-center gap-2"
+              >
+                {isSubmitting ? 'Procesando...' : (
+                  <>
+                    <Gift size={16} />
+                    Obtener Cupón
+                  </>
+                )}
+              </button>
+            ) : (
+              <button
+                onClick={() => setCurrentQuestion(prev => Math.min(SURVEY_QUESTIONS.length - 1, prev + 1))}
+                disabled={!answers[question.id]}
+                className={`px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest transition-all flex items-center gap-2 ${
+                  answers[question.id]
+                    ? 'bg-black text-white hover:bg-amber-600'
+                    : 'bg-neutral-100 text-neutral-400 cursor-not-allowed'
+                }`}
+              >
+                Siguiente <ChevronRight size={16} />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- COMPONENTE DE PERFIL DE USUARIO ---
+const UserProfileModal = ({ isOpen, onClose, userProfile, onUpdateProfile, onOpenSurvey }) => {
+  const [displayName, setDisplayName] = useState('');
+  const [instagramHandle, setInstagramHandle] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && userProfile) {
+      setDisplayName(userProfile.displayName || '');
+      setInstagramHandle(userProfile.instagram || '');
+      setSaveSuccess(false);
+    }
+  }, [isOpen, userProfile]);
+
+  if (!isOpen) return null;
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    await onUpdateProfile({
+      displayName: displayName.trim(),
+      instagram: instagramHandle.trim().replace('@', '')
+    });
+    setIsSaving(false);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose}></div>
+      <div className="relative bg-white w-full max-w-md rounded-[2.5rem] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
+        {/* Header */}
+        <div className="bg-black p-6 text-white">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center">
+                <User size={24} />
+              </div>
+              <div>
+                <h2 className="text-lg font-black uppercase tracking-tight">Mi Perfil</h2>
+                <p className="text-white/60 text-xs">Personaliza tu experiencia</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Estado del cupón */}
+          <div className={`p-4 rounded-2xl border-2 ${
+            userProfile?.hasCoupon 
+              ? 'bg-green-50 border-green-200' 
+              : userProfile?.surveyCompletedAt
+                ? 'bg-neutral-50 border-neutral-200'
+                : 'bg-amber-50 border-amber-200'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                  userProfile?.hasCoupon 
+                    ? 'bg-green-500' 
+                    : userProfile?.surveyCompletedAt
+                      ? 'bg-neutral-400'
+                      : 'bg-amber-500'
+                } text-white`}>
+                  {userProfile?.hasCoupon ? <Award size={20} /> : userProfile?.surveyCompletedAt ? <Check size={20} /> : <Gift size={20} />}
+                </div>
+                <div>
+                  <p className={`text-sm font-black uppercase ${
+                    userProfile?.hasCoupon 
+                      ? 'text-green-700' 
+                      : userProfile?.surveyCompletedAt
+                        ? 'text-neutral-600'
+                        : 'text-amber-700'
+                  }`}>
+                    {userProfile?.hasCoupon 
+                      ? '¡Tienes 15% OFF!' 
+                      : userProfile?.surveyCompletedAt
+                        ? 'Encuesta realizada'
+                        : 'Cupón Disponible'}
+                  </p>
+                  <p className={`text-xs ${
+                    userProfile?.hasCoupon 
+                      ? 'text-green-600' 
+                      : userProfile?.surveyCompletedAt
+                        ? 'text-neutral-500'
+                        : 'text-amber-600'
+                  }`}>
+                    {userProfile?.hasCoupon 
+                      ? 'Aplica en tu próxima compra por WhatsApp' 
+                      : userProfile?.surveyCompletedAt
+                        ? userProfile?.couponUsedAt 
+                          ? 'Cupón ya utilizado' 
+                          : 'Gracias por completar la encuesta'
+                        : 'Completa la encuesta para obtenerlo'}
+                  </p>
+                </div>
+              </div>
+              {!userProfile?.hasCoupon && !userProfile?.surveyCompletedAt && (
+                <button
+                  onClick={onOpenSurvey}
+                  className="bg-amber-600 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-amber-700 transition-all"
+                >
+                  Obtener
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Campos editables */}
+          <div className="space-y-4">
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400 mb-2 block">
+                Nombre para mostrar
+              </label>
+              <input
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Tu nombre"
+                className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
+              />
+            </div>
+
+            <div>
+              <label className="text-[10px] font-black uppercase tracking-widest text-neutral-400 mb-2 block">
+                Instagram
+              </label>
+              <div className="relative">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400">@</span>
+                <input
+                  type="text"
+                  value={instagramHandle}
+                  onChange={(e) => setInstagramHandle(e.target.value.replace('@', ''))}
+                  placeholder="tu_usuario"
+                  className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl pl-8 pr-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Botón guardar */}
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className={`w-full py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 ${
+              saveSuccess 
+                ? 'bg-green-500 text-white' 
+                : 'bg-black text-white hover:bg-amber-600'
+            }`}
+          >
+            {isSaving ? 'Guardando...' : saveSuccess ? (
+              <>
+                <Check size={16} /> ¡Guardado!
+              </>
+            ) : (
+              <>
+                <Save size={16} /> Guardar Cambios
+              </>
+            )}
+          </button>
+
+          {/* Info adicional */}
+          {userProfile?.couponUsedAt && (
+            <p className="text-center text-xs text-neutral-400">
+              Cupón usado el {new Date(userProfile.couponUsedAt).toLocaleDateString('es-CO')}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProduct, deleteProduct, usingFirestore, migrateProductsToFirestore, cmsTextos, setCmsTextos, heroImage, setHeroImage, handleUpdateHero, announcementConfig, setAnnouncementConfig }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [adminTab, setAdminTab] = useState('inventario'); // 'inventario' | 'diseno'
   const [designData, setDesignData] = useState(() => cmsTextos || DEFAULT_TEXTOS);
   const [heroImagePreview, setHeroImagePreview] = useState(heroImage || '');
   const [isUploadingHero, setIsUploadingHero] = useState(false);
+  const [announcementData, setAnnouncementData] = useState(announcementConfig || {});
     const [formData, setFormData] = useState({ name: '', price: '', vibe: 'Streetwear', sizes: [], gender: 'Unisex', brand: 'Nike', imagesDataUrls: [], isPromo: false, promoPrice: '', promoUntil: '' });
 
     // Sync designData when cmsTextos changes
@@ -485,6 +875,20 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
       } catch (err) {
         console.error('Error saving design config:', err);
         onNotify && onNotify('❌ Error al guardar configuración');
+      }
+    };
+
+    // Guardar configuración de barra de anuncios
+    const handleSaveAnnouncement = async () => {
+      try {
+        if (usingFirestore) {
+          await setDoc(doc(db, 'configuracion', 'announcement_bar'), announcementData, { merge: true });
+          onNotify && onNotify('✅ Barra de anuncios actualizada');
+        }
+        setAnnouncementConfig && setAnnouncementConfig(announcementData);
+      } catch (err) {
+        console.error('Error saving announcement config:', err);
+        onNotify && onNotify('❌ Error al guardar barra de anuncios');
       }
     };
 
@@ -622,7 +1026,107 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
           <div className="animate-in fade-in slide-in-from-bottom-4">
             <div className="mb-6 sm:mb-8">
               <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tighter">Configuración de Diseño</h2>
-              <p className="text-[10px] sm:text-xs text-neutral-400 mt-1">Edita los textos del Hero y la sección Sobre Nosotros</p>
+              <p className="text-[10px] sm:text-xs text-neutral-400 mt-1">Edita los textos del Hero, barra de anuncios y la sección Sobre Nosotros</p>
+            </div>
+
+            {/* BARRA DE ANUNCIOS - NUEVA SECCIÓN */}
+            <div className="mb-6 sm:mb-8 p-4 sm:p-6 bg-gradient-to-r from-purple-50 to-pink-50 rounded-2xl border-2 border-purple-100">
+              <label className="text-[10px] sm:text-xs font-black uppercase text-purple-700 mb-3 block flex items-center gap-2">
+                📢 Barra de Anuncios Superior
+              </label>
+              <p className="text-[10px] text-neutral-500 mb-4">Esta barra aparece en la parte superior de la página. Ideal para promociones y mensajes importantes.</p>
+              
+              <div className="space-y-4">
+                {/* Habilitar/Deshabilitar */}
+                <div className="flex items-center gap-3">
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={announcementData.enabled !== false}
+                      onChange={(e) => setAnnouncementData(prev => ({ ...prev, enabled: e.target.checked }))}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-neutral-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                  </label>
+                  <span className="text-xs font-bold text-neutral-600">
+                    {announcementData.enabled !== false ? 'Barra visible' : 'Barra oculta'}
+                  </span>
+                </div>
+
+                {/* Texto del anuncio */}
+                <div>
+                  <label className="text-[9px] font-black uppercase text-neutral-400 mb-1.5 block">Mensaje del anuncio</label>
+                  <textarea
+                    value={announcementData.text || ''}
+                    onChange={(e) => setAnnouncementData(prev => ({ ...prev, text: e.target.value }))}
+                    placeholder="🎁 15% OFF en tu primera compra..."
+                    className="w-full px-4 py-3 rounded-xl border border-neutral-200 focus:border-purple-500 outline-none text-sm resize-none"
+                    rows={2}
+                  />
+                </div>
+
+                {/* Colores */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[9px] font-black uppercase text-neutral-400 mb-1.5 block">Color de fondo</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={announcementData.bgColor || '#d97706'}
+                        onChange={(e) => setAnnouncementData(prev => ({ ...prev, bgColor: e.target.value }))}
+                        className="w-10 h-10 rounded-lg border-2 border-neutral-200 cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        value={announcementData.bgColor || '#d97706'}
+                        onChange={(e) => setAnnouncementData(prev => ({ ...prev, bgColor: e.target.value }))}
+                        className="flex-1 px-3 py-2 rounded-lg border border-neutral-200 text-xs font-mono"
+                        placeholder="#d97706"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black uppercase text-neutral-400 mb-1.5 block">Color del texto</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={announcementData.textColor || '#ffffff'}
+                        onChange={(e) => setAnnouncementData(prev => ({ ...prev, textColor: e.target.value }))}
+                        className="w-10 h-10 rounded-lg border-2 border-neutral-200 cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        value={announcementData.textColor || '#ffffff'}
+                        onChange={(e) => setAnnouncementData(prev => ({ ...prev, textColor: e.target.value }))}
+                        className="flex-1 px-3 py-2 rounded-lg border border-neutral-200 text-xs font-mono"
+                        placeholder="#ffffff"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Vista previa */}
+                <div>
+                  <label className="text-[9px] font-black uppercase text-neutral-400 mb-1.5 block">Vista previa</label>
+                  <div 
+                    className="py-2 px-4 rounded-lg text-center text-xs font-semibold overflow-hidden"
+                    style={{ 
+                      backgroundColor: announcementData.bgColor || '#d97706',
+                      color: announcementData.textColor || '#ffffff'
+                    }}
+                  >
+                    {announcementData.text || 'Tu mensaje aparecerá aquí...'}
+                  </div>
+                </div>
+
+                {/* Botón guardar */}
+                <button
+                  onClick={handleSaveAnnouncement}
+                  className="w-full bg-purple-600 text-white py-3 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-purple-700 transition-all"
+                >
+                  💾 Guardar Barra de Anuncios
+                </button>
+              </div>
             </div>
 
             {/* IMAGEN DEL HERO - AL INICIO */}
@@ -993,7 +1497,7 @@ const AdminPanel = ({ products, setProducts, onNotify, createProduct, updateProd
   );
 };
 
-const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogout, onOpenLogin, usingFirestore, activeTab, setActiveTab, onOpenCart }) => {
+const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogout, onOpenLogin, usingFirestore, activeTab, setActiveTab, onOpenCart, onOpenProfile, userProfile, hasAnnouncementBar }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
 
@@ -1022,7 +1526,7 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
   return (
     <>
       {/* NAVBAR PRINCIPAL - GLASSMORPHISM */}
-      <nav className={`fixed top-0 left-0 right-0 z-[100] transition-all duration-500 ${isScrolled ? 'bg-white/70 backdrop-blur-xl shadow-lg shadow-black/5' : 'bg-white'}`}>
+      <nav className={`fixed left-0 right-0 z-[100] transition-all duration-500 ${hasAnnouncementBar ? 'top-8' : 'top-0'} ${isScrolled ? 'bg-white/70 backdrop-blur-xl shadow-lg shadow-black/5' : 'bg-white'}`}>
         <div className="h-14 md:h-20 flex items-center justify-between px-3 sm:px-6 max-w-7xl mx-auto">
           {/* Logo con identidad de marca */}
           <div 
@@ -1063,6 +1567,18 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
             >
               Guía de Tallas
             </button>
+            {/* Mi Perfil - Solo para usuarios logueados */}
+            {currentUser && (
+              <button 
+                onClick={onOpenProfile}
+                className="text-[10px] font-black uppercase tracking-[0.2em] transition-all hover:text-amber-600 flex items-center gap-2 text-neutral-700 relative"
+              >
+                <User size={14} /> Mi Perfil
+                {userProfile?.hasCoupon && (
+                  <span className="absolute -top-1 -right-3 bg-green-500 text-white text-[7px] rounded-full w-4 h-4 flex items-center justify-center font-black">%</span>
+                )}
+              </button>
+            )}
           </div>
 
           {/* Desktop Right Section */}
@@ -1164,6 +1680,22 @@ const Navbar = ({ wishlistCount, onOpenAssistant, userRole, currentUser, onLogou
             >
               Guía de Tallas <Maximize2 size={18} />
             </button>
+
+            {/* Mi Perfil - Solo para usuarios logueados */}
+            {currentUser && (
+              <button 
+                onClick={() => { onOpenProfile(); setMobileMenuOpen(false); }}
+                className="w-full flex items-center justify-between p-5 rounded-2xl text-sm font-black uppercase tracking-[0.15em] transition-all bg-gradient-to-r from-amber-50 to-amber-100 text-amber-700 active:from-amber-100 active:to-amber-200"
+              >
+                <span className="flex items-center gap-2">
+                  Mi Perfil 
+                  {userProfile?.hasCoupon && (
+                    <span className="bg-green-500 text-white text-[8px] px-2 py-0.5 rounded-full font-black">15% OFF</span>
+                  )}
+                </span>
+                <Gift size={18} />
+              </button>
+            )}
           </div>
 
           {/* Footer del menú móvil */}
@@ -1527,19 +2059,28 @@ const CatalogSection = ({ products, onProductClick, activeBrand, setActiveBrand,
   );
 };
 
-const ProductModal = ({ product, onClose, addToCart, currentUser, onOpenLogin }) => {
+const ProductModal = ({ product, onClose, addToCart, currentUser, onOpenLogin, userProfile, onUseCoupon }) => {
   const [selectedSize, setSelectedSize] = useState(null);
   const [aiAdvice, setAiAdvice] = useState(null);
   const [loadingAI, setLoadingAI] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [addedToCart, setAddedToCart] = useState(false);
+  const [showCouponToast, setShowCouponToast] = useState(false);
+  const [isRedeeming, setIsRedeeming] = useState(false);
 
   useEffect(() => {
     setActiveImageIndex(0);
     setAddedToCart(false);
+    setShowCouponToast(false);
   }, [product]);
 
   if (!product) return null;
+
+  // Calcular precio con descuento si el usuario tiene cupón (NO aplica a productos en promoción)
+  const isPromoProduct = product.isPromo && product.promoPrice;
+  const hasCoupon = userProfile?.hasCoupon === true && !isPromoProduct; // Cupón no aplica a promociones
+  const originalPrice = isPromoProduct ? Number(product.promoPrice) : Number(product.price);
+  const discountedPrice = hasCoupon ? Math.round(originalPrice * 0.85) : originalPrice;
 
   const handleGetStyleAdvice = async () => {
     setLoadingAI(true);
@@ -1550,11 +2091,14 @@ const ProductModal = ({ product, onClose, addToCart, currentUser, onOpenLogin })
     setLoadingAI(false);
   };
 
-  const handleAddToCart = () => {
+  const handleAddToCart = async () => {
     if (!selectedSize) {
       alert('Por favor, selecciona una talla primero.');
       return;
     }
+
+    // Nota: El cupón NO se gasta al agregar al carrito
+    // Solo se gasta cuando el usuario hace clic en WhatsApp
 
     const success = addToCart(product, selectedSize);
     if (success) {
@@ -1563,13 +2107,46 @@ const ProductModal = ({ product, onClose, addToCart, currentUser, onOpenLogin })
     }
   };
 
-  const handleWhatsAppChat = () => {
+  const handleWhatsAppChat = async () => {
     if (!selectedSize) { alert('Por favor, selecciona una talla primero.'); return; }
+    if (isRedeeming) return; // Prevenir doble clic
+    
     const phone = (WHATSAPP_NUMBER || '').toString().replace(/\D/g, '');
     if (!phone) { alert('Número de WhatsApp no configurado'); return; }
-    const priceText = product.isPromo && product.promoPrice ? Number(product.promoPrice).toLocaleString('es-CO') : Number(product.price).toLocaleString('es-CO');
-    const promoText = product.isPromo ? ` que está en oferta a $${priceText}` : '';
-    const message = `Hola Verzing! 👋\n\nEstoy interesado en el modelo *${product.name}*${promoText}\n*Talla:* ${selectedSize}\n\n¿Está disponible?`;
+    
+    // Calcular precio final para el mensaje
+    const couponWasActive = hasCoupon; // Guardar estado antes de redimir
+    const finalPrice = couponWasActive ? discountedPrice : originalPrice;
+    const priceText = Number(finalPrice).toLocaleString('es-CO');
+    
+    // Si tiene cupón, redimirlo PRIMERO (antes de construir mensaje)
+    if (couponWasActive && onUseCoupon) {
+      setIsRedeeming(true);
+      const redeemed = await onUseCoupon();
+      setIsRedeeming(false);
+      
+      if (!redeemed) {
+        alert('Tu cupón ya fue utilizado. Los precios han sido actualizados.');
+        return; // No continuar si el cupón ya fue usado
+      }
+    }
+    
+    // Construir mensaje con información del cupón si aplica
+    let message = `Hola Verzing! 👋\n\nEstoy interesado en el modelo *${product.name}*`;
+    
+    if (couponWasActive) {
+      message += `\n\n🎟️ *CUPÓN DE BIENVENIDA APLICADO (15% OFF)*`;
+      message += `\n💰 Precio original: $${Number(originalPrice).toLocaleString('es-CO')}`;
+      message += `\n✨ *Precio con descuento: $${priceText}*`;
+      message += `\n\n📝 Nota: Cupón de bienvenida aplicado`;
+    } else if (product.isPromo) {
+      message += ` que está en oferta a $${priceText}`;
+    } else {
+      message += `\n💰 Precio: $${priceText}`;
+    }
+    
+    message += `\n*Talla:* ${selectedSize}\n\n¿Está disponible?`;
+    
     const encodedMessage = encodeURIComponent(message);
     const whatsappUrl = `https://wa.me/${phone}?text=${encodedMessage}`;
     const w = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
@@ -1591,6 +2168,22 @@ const ProductModal = ({ product, onClose, addToCart, currentUser, onOpenLogin })
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-2 sm:p-4">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose}></div>
+      
+      {/* Toast de cupón aplicado */}
+      {showCouponToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] animate-in slide-in-from-top duration-300">
+          <div className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3">
+            <div className="bg-white/20 p-2 rounded-full">
+              <Gift size={20} />
+            </div>
+            <div>
+              <p className="font-black text-sm">¡Cupón aplicado a tu pedido!</p>
+              <p className="text-xs text-white/80">Este beneficio es de un solo uso</p>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <div className="relative bg-white w-full max-w-5xl rounded-2xl sm:rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col md:flex-row animate-in zoom-in-95 duration-300 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto no-scrollbar">
         <button onClick={onClose} className="absolute top-4 right-4 sm:top-8 sm:right-8 z-10 p-2 bg-white/80 sm:bg-white/50 backdrop-blur rounded-full transition-colors">
           <X size={18} className="sm:hidden" />
@@ -1599,13 +2192,19 @@ const ProductModal = ({ product, onClose, addToCart, currentUser, onOpenLogin })
         <div className="w-full md:w-1/2 bg-neutral-50 flex items-center justify-center p-4 sm:p-8 md:p-12">
           <div className="w-full max-w-md">
             <div className="aspect-square bg-white rounded-2xl sm:rounded-3xl flex items-center justify-center shadow-inner relative overflow-hidden">
-              <img src={(Array.isArray(product.image) ? product.image[activeImageIndex] : product.image)} className="w-full h-full object-cover" />
+              <img src={(Array.isArray(product.image) ? product.image[activeImageIndex] : product.image)} className="w-full h-full object-cover" loading="lazy" />
+              {/* Badge de cupón */}
+              {hasCoupon && (
+                <div className="absolute top-3 left-3 bg-green-500 text-white px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-wider animate-pulse flex items-center gap-1.5">
+                  <Gift size={12} /> 15% OFF
+                </div>
+              )}
             </div>
             {Array.isArray(product.image) && product.image.length > 1 && (
               <div className="mt-3 sm:mt-4 flex gap-2 overflow-x-auto no-scrollbar pb-1">
                 {product.image.map((src, idx) => (
                   <button key={idx} onClick={() => setActiveImageIndex(idx)} className={`flex-shrink-0 w-14 h-14 sm:w-20 sm:h-20 rounded-lg sm:rounded-xl overflow-hidden border-2 ${activeImageIndex === idx ? 'border-amber-600' : 'border-transparent'}`}>
-                    <img src={src} className="w-full h-full object-cover" />
+                    <img src={src} className="w-full h-full object-cover" loading="lazy" />
                   </button>
                 ))}
               </div>
@@ -1615,14 +2214,29 @@ const ProductModal = ({ product, onClose, addToCart, currentUser, onOpenLogin })
         <div className="w-full md:w-1/2 p-5 sm:p-8 md:p-12 flex flex-col text-left">
           <span className="text-amber-600 font-bold text-[9px] sm:text-[10px] uppercase tracking-[0.2em] sm:tracking-[0.3em] mb-2 sm:mb-4">{product.vibe} Collection</span>
           <h2 className="text-2xl sm:text-3xl md:text-4xl font-black tracking-tighter mb-2 leading-none uppercase">{product.name}</h2>
-          {product.isPromo && product.promoPrice ? (
-            <div className="mb-4 sm:mb-6">
-              <p className="text-xl sm:text-2xl font-black mb-1 text-amber-600">$ {Number(product.promoPrice).toLocaleString('es-CO')}</p>
-              <p className="text-xs sm:text-sm text-neutral-400 line-through">$ {Number(product.price).toLocaleString('es-CO')}</p>
-            </div>
-          ) : (
-            <p className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">$ {Number(product.price).toLocaleString('es-CO')}</p>
-          )}
+          
+          {/* Sección de precios con cupón */}
+          <div className="mb-4 sm:mb-6">
+            {hasCoupon ? (
+              <>
+                <div className="flex items-center gap-3 mb-1">
+                  <p className="text-xl sm:text-2xl font-black text-green-600">$ {Number(discountedPrice).toLocaleString('es-CO')}</p>
+                  <span className="bg-green-100 text-green-700 text-[9px] font-black px-2 py-1 rounded-full uppercase">-15%</span>
+                </div>
+                <p className="text-xs sm:text-sm text-neutral-400 line-through">$ {Number(originalPrice).toLocaleString('es-CO')}</p>
+                <p className="text-[10px] text-green-600 font-bold mt-1 flex items-center gap-1">
+                  <Gift size={12} /> Cupón aplicado automáticamente
+                </p>
+              </>
+            ) : product.isPromo && product.promoPrice ? (
+              <>
+                <p className="text-xl sm:text-2xl font-black mb-1 text-amber-600">$ {Number(product.promoPrice).toLocaleString('es-CO')}</p>
+                <p className="text-xs sm:text-sm text-neutral-400 line-through">$ {Number(product.price).toLocaleString('es-CO')}</p>
+              </>
+            ) : (
+              <p className="text-xl sm:text-2xl font-bold">$ {Number(product.price).toLocaleString('es-CO')}</p>
+            )}
+          </div>
 
           {/* Tallas - ahora debajo del precio */}
           <div className="mb-4 sm:mb-6">
@@ -2229,12 +2843,30 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true); // Estado de carga para productos
   const [isLoadingHero, setIsLoadingHero] = useState(true); // Estado de carga para Hero (imagen + textos)
 
+  // --- PERFIL DE USUARIO Y CUPONES ---
+  const [userProfile, setUserProfile] = useState(null);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isSurveyOpen, setIsSurveyOpen] = useState(false);
+  const [userUid, setUserUid] = useState(() => {
+    const s = localStorage.getItem('verzing_session');
+    return s ? JSON.parse(s).username : null;
+  });
+
   // CMS texts loaded from Firestore (or defaults) - Inicializado como null hasta verificar storage
   const [cmsTextos, setCmsTextos] = useState(null);
   
   // Hero image URL (editable desde AdminPanel) - Inicializado como null hasta verificar storage
   const DEFAULT_HERO_IMAGE = 'https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&q=80&w=1000';
   const [heroImage, setHeroImage] = useState(null);
+
+  // --- BARRA DE ANUNCIOS CONFIGURABLE ---
+  const DEFAULT_ANNOUNCEMENT = {
+    text: '🎁 15% OFF en tu primera compra • Regístrate y completa la encuesta en "Mi Perfil" • El cupón se aplica al contactar por WhatsApp',
+    bgColor: '#d97706', // amber-600
+    textColor: '#ffffff',
+    enabled: true
+  };
+  const [announcementConfig, setAnnouncementConfig] = useState(DEFAULT_ANNOUNCEMENT);
 
   // Cargar heroImage y cmsTextos desde localStorage o Firestore al montar
   useEffect(() => {
@@ -2276,6 +2908,13 @@ export default function App() {
             loadedImage = heroSnap.data().imageUrl;
             // Guardar en localStorage para próximas cargas
             localStorage.setItem('verzing_hero_image', loadedImage);
+          }
+          
+          // Cargar configuración de barra de anuncios desde Firestore
+          const announcementRef = doc(db, 'configuracion', 'announcement_bar');
+          const announcementSnap = await getDoc(announcementRef);
+          if (announcementSnap && announcementSnap.exists()) {
+            setAnnouncementConfig({ ...DEFAULT_ANNOUNCEMENT, ...announcementSnap.data() });
           }
         }
         
@@ -2324,6 +2963,118 @@ export default function App() {
 
   // Seed admin user on first run
   useEffect(() => { seedAdmin(); }, []);
+
+  // --- SUSCRIPCIÓN EN TIEMPO REAL AL PERFIL DEL USUARIO (Firestore) ---
+  useEffect(() => {
+    if (!usingFirestore || !userUid) {
+      setUserProfile(null);
+      return;
+    }
+
+    const userDocRef = doc(db, 'users', userUid);
+    const unsub = onSnapshot(userDocRef, async (snap) => {
+      if (snap.exists()) {
+        setUserProfile({ id: snap.id, ...snap.data() });
+      } else {
+        // Crear documento de usuario si no existe
+        const newProfile = {
+          displayName: currentUser || '',
+          instagram: '',
+          hasCoupon: false,
+          couponUsedAt: null,
+          surveyAnswers: null,
+          createdAt: new Date().toISOString()
+        };
+        await setDoc(userDocRef, newProfile);
+        setUserProfile({ id: userUid, ...newProfile });
+      }
+    }, (err) => {
+      console.error('Error subscribing to user profile:', err);
+    });
+
+    return () => unsub();
+  }, [usingFirestore, userUid, currentUser]);
+
+  // --- FUNCIONES DE PERFIL Y CUPÓN ---
+  const updateUserProfile = async (updates) => {
+    if (!usingFirestore || !userUid) return;
+    try {
+      const userDocRef = doc(db, 'users', userUid);
+      await updateDoc(userDocRef, {
+        ...updates,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error('Error updating user profile:', err);
+    }
+  };
+
+  const completeSurvey = async (answers) => {
+    if (!usingFirestore || !userUid) return;
+    try {
+      const userDocRef = doc(db, 'users', userUid);
+      await updateDoc(userDocRef, {
+        surveyAnswers: answers,
+        hasCoupon: true,
+        surveyCompletedAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error('Error completing survey:', err);
+    }
+  };
+
+  // Ref para prevenir múltiples llamadas simultáneas (ej: dos pestañas)
+  const couponRedemptionInProgress = useRef(false);
+
+  // Función robusta para redimir cupón (protección contra doble uso)
+  const redeemCoupon = async () => {
+    // Verificaciones de seguridad
+    if (!usingFirestore || !userUid) {
+      console.warn('redeemCoupon: Firestore no disponible o usuario no logueado');
+      return false;
+    }
+    
+    // Prevenir ejecución simultánea en la misma pestaña
+    if (couponRedemptionInProgress.current) {
+      console.warn('redeemCoupon: Redención ya en progreso');
+      return false;
+    }
+    
+    // Verificar estado local antes de intentar actualizar
+    if (!userProfile?.hasCoupon) {
+      console.warn('redeemCoupon: Usuario no tiene cupón activo');
+      return false;
+    }
+    
+    couponRedemptionInProgress.current = true;
+    
+    try {
+      const userDocRef = doc(db, 'users', userUid);
+      
+      // Verificar estado en Firestore antes de actualizar (protección contra dos pestañas)
+      const currentDoc = await getDoc(userDocRef);
+      if (!currentDoc.exists() || currentDoc.data().hasCoupon !== true) {
+        console.warn('redeemCoupon: Cupón ya fue usado (verificación en Firestore)');
+        couponRedemptionInProgress.current = false;
+        return false;
+      }
+      
+      // Actualizar Firestore: invalidar cupón
+      await updateDoc(userDocRef, {
+        hasCoupon: false,
+        couponUsedAt: serverTimestamp(),
+        couponUsedProduct: selectedProduct?.name || 'Producto no especificado'
+      });
+      
+      console.log('✅ Cupón redimido exitosamente');
+      couponRedemptionInProgress.current = false;
+      return true;
+    } catch (err) {
+      console.error('Error redeeming coupon:', err);
+      couponRedemptionInProgress.current = false;
+      return false;
+    }
+  };
 
   // Broadcast channel ref for real-time updates across tabs
   const bcRef = useRef(null);
@@ -2603,12 +3354,15 @@ export default function App() {
     const displayName = (user.firstName || user.lastName) ? `${(user.firstName || '').trim()} ${(user.lastName || '').trim()}`.trim() : user.username;
     setCurrentUser(displayName);
     setUserRole(user.role);
+    setUserUid(user.username); // Usar username como uid para el perfil en Firestore
     localStorage.setItem('verzing_session', JSON.stringify({ username: user.username, role: user.role, displayName }));
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
     setUserRole(null);
+    setUserUid(null);
+    setUserProfile(null);
     localStorage.removeItem('verzing_session');
   };
 
@@ -2656,6 +3410,23 @@ export default function App() {
 
   // Catalog filtering is handled inside the new <CatalogSection /> component.
 
+  // Estado para la barra de anuncios (se oculta al hacer scroll)
+  const [showAnnouncementBar, setShowAnnouncementBar] = useState(true);
+  const [hideAnnouncementOnScroll, setHideAnnouncementOnScroll] = useState(false);
+
+  // Ocultar barra de anuncios al hacer scroll
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 50) {
+        setHideAnnouncementOnScroll(true);
+      } else {
+        setHideAnnouncementOnScroll(false);
+      }
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#FDFCFB] text-[#1A1A1A] font-sans selection:bg-amber-100 selection:text-amber-900 relative">
       <style>{`
@@ -2673,7 +3444,62 @@ export default function App() {
 
         /* Prevent filters being hidden under sticky navbar when scrolling */
         #catalog { scroll-margin-top: 96px; }
+        
+        /* Animación marquee para la barra de anuncios */
+        @keyframes marquee {
+          0% { transform: translateX(0%); }
+          100% { transform: translateX(-50%); }
+        }
+        .animate-marquee {
+          animation: marquee 25s linear infinite;
+        }
+        .animate-marquee:hover {
+          animation-play-state: paused;
+        }
       `}</style>
+
+      {/* Barra de Anuncios Superior - Configurable por Admin */}
+      {showAnnouncementBar && announcementConfig?.enabled !== false && !hideAnnouncementOnScroll && (
+        <div 
+          className="fixed top-0 left-0 right-0 z-[110] overflow-hidden transition-transform duration-300"
+          style={{ backgroundColor: announcementConfig?.bgColor || '#d97706' }}
+        >
+          <div className="flex items-center justify-center px-4 py-1.5">
+            {/* Texto del anuncio */}
+            <div className="flex-1 overflow-hidden">
+              <div className="flex animate-marquee whitespace-nowrap">
+                <span 
+                  className="mx-8 text-[10px] sm:text-xs font-semibold"
+                  style={{ color: announcementConfig?.textColor || '#ffffff' }}
+                >
+                  {announcementConfig?.text || '🎁 15% OFF en tu primera compra'}
+                </span>
+                {/* Repetir para loop continuo */}
+                <span 
+                  className="mx-8 text-[10px] sm:text-xs font-semibold"
+                  style={{ color: announcementConfig?.textColor || '#ffffff' }}
+                >
+                  {announcementConfig?.text || '🎁 15% OFF en tu primera compra'}
+                </span>
+              </div>
+            </div>
+            {/* Botón cerrar */}
+            <button 
+              onClick={() => setShowAnnouncementBar(false)}
+              className="ml-2 p-0.5 hover:bg-white/20 rounded-full transition-colors flex-shrink-0"
+              style={{ color: announcementConfig?.textColor || '#ffffff' }}
+              aria-label="Cerrar anuncio"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Spacer para compensar la barra fija */}
+      {showAnnouncementBar && announcementConfig?.enabled !== false && !hideAnnouncementOnScroll && (
+        <div className="h-8"></div>
+      )}
 
       <Navbar 
         wishlistCount={cart.length} 
@@ -2686,6 +3512,9 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenCart={() => setIsCartOpen(true)}
+        onOpenProfile={() => setIsProfileOpen(true)}
+        userProfile={userProfile}
+        hasAnnouncementBar={showAnnouncementBar && announcementConfig?.enabled !== false && !hideAnnouncementOnScroll}
       />
 
       {activeTab === 'shop' && (
@@ -2696,7 +3525,7 @@ export default function App() {
           <PromoSection products={products} onProductClick={setSelectedProduct} isLoading={isLoading} />
 
           {userRole === 'admin' && (
-            <AdminPanel products={products} setProducts={setProducts} onNotify={(msg) => handleNotify(msg)} createProduct={createProduct} updateProduct={updateProduct} deleteProduct={deleteProduct} usingFirestore={usingFirestore} migrateProductsToFirestore={migrateProductsToFirestore} cmsTextos={cmsTextos} setCmsTextos={setCmsTextos} heroImage={heroImage} setHeroImage={setHeroImage} handleUpdateHero={handleUpdateHero} />
+            <AdminPanel products={products} setProducts={setProducts} onNotify={(msg) => handleNotify(msg)} createProduct={createProduct} updateProduct={updateProduct} deleteProduct={deleteProduct} usingFirestore={usingFirestore} migrateProductsToFirestore={migrateProductsToFirestore} cmsTextos={cmsTextos} setCmsTextos={setCmsTextos} heroImage={heroImage} setHeroImage={setHeroImage} handleUpdateHero={handleUpdateHero} announcementConfig={announcementConfig} setAnnouncementConfig={setAnnouncementConfig} />
           )}
 
           <CatalogSection 
@@ -2731,6 +3560,8 @@ export default function App() {
           addToCart={addToCart}
           currentUser={currentUser}
           onOpenLogin={() => setIsLoginOpen(true)}
+          userProfile={userProfile}
+          onUseCoupon={redeemCoupon}
         />
       )}
       <CartDrawer 
@@ -2742,6 +3573,21 @@ export default function App() {
       />
       <AIAssistant isOpen={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} products={products} />
       <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} onLogin={(user) => { handleLogin(user); setIsLoginOpen(false); }} />
+      
+      {/* Modales de Perfil y Encuesta */}
+      <UserProfileModal 
+        isOpen={isProfileOpen} 
+        onClose={() => setIsProfileOpen(false)} 
+        userProfile={userProfile}
+        onUpdateProfile={updateUserProfile}
+        onOpenSurvey={() => { setIsProfileOpen(false); setIsSurveyOpen(true); }}
+      />
+      <SurveyModal 
+        isOpen={isSurveyOpen} 
+        onClose={() => setIsSurveyOpen(false)} 
+        onComplete={completeSurvey}
+        userProfile={userProfile}
+      />
     </div>
   );
 }
