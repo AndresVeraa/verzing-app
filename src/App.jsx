@@ -2059,7 +2059,7 @@ const CatalogSection = ({ products, onProductClick, activeBrand, setActiveBrand,
   );
 };
 
-const ProductModal = ({ product, onClose, addToCart, currentUser, onOpenLogin, userProfile, onUseCoupon }) => {
+const ProductModal = ({ product, onClose, addToCart, currentUser, onOpenLogin, userProfile, onUseCoupon, cart = [] }) => {
   const [selectedSize, setSelectedSize] = useState(null);
   const [aiAdvice, setAiAdvice] = useState(null);
   const [loadingAI, setLoadingAI] = useState(false);
@@ -2076,9 +2076,13 @@ const ProductModal = ({ product, onClose, addToCart, currentUser, onOpenLogin, u
 
   if (!product) return null;
 
+  // Verificar si ya hay un producto con cupón en el carrito
+  const cartHasCouponItem = cart.some(item => item.hasCouponApplied);
+  
   // Calcular precio con descuento si el usuario tiene cupón (NO aplica a productos en promoción)
   const isPromoProduct = product.isPromo && product.promoPrice;
-  const hasCoupon = userProfile?.hasCoupon === true && !isPromoProduct; // Cupón no aplica a promociones
+  // El cupón está disponible si: tiene cupón, NO es promo, Y no hay otro item con cupón en el carrito
+  const hasCoupon = userProfile?.hasCoupon === true && !isPromoProduct && !cartHasCouponItem;
   const originalPrice = isPromoProduct ? Number(product.promoPrice) : Number(product.price);
   const discountedPrice = hasCoupon ? Math.round(originalPrice * 0.85) : originalPrice;
 
@@ -2097,12 +2101,16 @@ const ProductModal = ({ product, onClose, addToCart, currentUser, onOpenLogin, u
       return;
     }
 
-    // Nota: El cupón NO se gasta al agregar al carrito
-    // Solo se gasta cuando el usuario hace clic en WhatsApp
+    // Nota: El cupón NO se gasta al agregar al carrito, solo se "reserva"
+    // Solo se gasta cuando el usuario hace clic en WhatsApp desde el carrito
 
-    const success = addToCart(product, selectedSize);
+    const success = addToCart(product, selectedSize, hasCoupon); // Pasar si tiene cupón
     if (success) {
       setAddedToCart(true);
+      if (hasCoupon) {
+        setShowCouponToast(true);
+        setTimeout(() => setShowCouponToast(false), 3000);
+      }
       setTimeout(() => setAddedToCart(false), 2000);
     }
   };
@@ -2177,8 +2185,8 @@ const ProductModal = ({ product, onClose, addToCart, currentUser, onOpenLogin, u
               <Gift size={20} />
             </div>
             <div>
-              <p className="font-black text-sm">¡Cupón aplicado a tu pedido!</p>
-              <p className="text-xs text-white/80">Este beneficio es de un solo uso</p>
+              <p className="font-black text-sm">¡Cupón reservado para este par!</p>
+              <p className="text-xs text-white/80">Se aplicará al finalizar por WhatsApp</p>
             </div>
           </div>
         </div>
@@ -2225,7 +2233,14 @@ const ProductModal = ({ product, onClose, addToCart, currentUser, onOpenLogin, u
                 </div>
                 <p className="text-xs sm:text-sm text-neutral-400 line-through">$ {Number(originalPrice).toLocaleString('es-CO')}</p>
                 <p className="text-[10px] text-green-600 font-bold mt-1 flex items-center gap-1">
-                  <Gift size={12} /> Cupón aplicado automáticamente
+                  <Gift size={12} /> Tu cupón se aplicará a este par
+                </p>
+              </>
+            ) : cartHasCouponItem && userProfile?.hasCoupon && !isPromoProduct ? (
+              <>
+                <p className="text-xl sm:text-2xl font-bold">$ {Number(originalPrice).toLocaleString('es-CO')}</p>
+                <p className="text-[10px] text-amber-600 font-bold mt-1 flex items-center gap-1">
+                  <Gift size={12} /> Tu cupón ya está reservado en otro producto del carrito
                 </p>
               </>
             ) : product.isPromo && product.promoPrice ? (
@@ -2322,19 +2337,38 @@ const ProductModal = ({ product, onClose, addToCart, currentUser, onOpenLogin, u
 };
 
 // --- CART DRAWER ---
-const CartDrawer = ({ isOpen, onClose, cart, removeFromCart, currentUser }) => {
+const CartDrawer = ({ isOpen, onClose, cart, removeFromCart, currentUser, userProfile, onUseCoupon }) => {
+  const [isRedeeming, setIsRedeeming] = useState(false);
+  
   if (!isOpen) return null;
 
+  // Calcular si hay un item con cupón
+  const couponItem = cart.find(item => item.hasCouponApplied);
+  const hasCouponInCart = !!couponItem;
+
+  // Calcular total considerando el descuento del cupón
   const total = cart.reduce((sum, item) => {
-    const price = item.isPromo && item.promoPrice ? item.promoPrice : item.price;
-    return sum + Number(price);
+    const basePrice = item.isPromo && item.promoPrice ? item.promoPrice : item.price;
+    // Si este item tiene cupón, aplicar 15% de descuento
+    const finalPrice = item.hasCouponApplied ? Math.round(Number(basePrice) * 0.85) : Number(basePrice);
+    return sum + finalPrice;
   }, 0);
 
-  const handleCheckoutWhatsApp = () => {
+  // Total sin descuento (para mostrar el ahorro)
+  const totalWithoutDiscount = cart.reduce((sum, item) => {
+    const basePrice = item.isPromo && item.promoPrice ? item.promoPrice : item.price;
+    return sum + Number(basePrice);
+  }, 0);
+
+  const savings = totalWithoutDiscount - total;
+
+  const handleCheckoutWhatsApp = async () => {
     if (cart.length === 0) {
       alert('Tu carrito está vacío');
       return;
     }
+
+    if (isRedeeming) return; // Prevenir doble clic
 
     const phone = (WHATSAPP_NUMBER || '').toString().replace(/\D/g, '');
     if (!phone) {
@@ -2342,17 +2376,42 @@ const CartDrawer = ({ isOpen, onClose, cart, removeFromCart, currentUser }) => {
       return;
     }
 
+    // Si hay un item con cupón, redimir el cupón ANTES de continuar
+    if (hasCouponInCart && onUseCoupon) {
+      setIsRedeeming(true);
+      const redeemed = await onUseCoupon();
+      setIsRedeeming(false);
+      
+      if (!redeemed) {
+        alert('Tu cupón ya fue utilizado. Por favor, actualiza tu carrito.');
+        return; // No continuar si el cupón ya fue usado
+      }
+    }
+
     // Construir mensaje detallado
     let message = `¡Hola Verzing! 👋\n\nQuiero finalizar mi compra:\n\n`;
     
     cart.forEach((item, index) => {
-      const price = item.isPromo && item.promoPrice ? item.promoPrice : item.price;
+      const basePrice = item.isPromo && item.promoPrice ? item.promoPrice : item.price;
+      const finalPrice = item.hasCouponApplied ? Math.round(Number(basePrice) * 0.85) : Number(basePrice);
+      
       message += `${index + 1}. *${item.name}*\n`;
       message += `   Talla: ${item.selectedSize}\n`;
-      message += `   Precio: $${Number(price).toLocaleString('es-CO')}\n\n`;
+      
+      if (item.hasCouponApplied) {
+        message += `   🎟️ CUPÓN 15% OFF APLICADO\n`;
+        message += `   Precio original: $${Number(basePrice).toLocaleString('es-CO')}\n`;
+        message += `   *Precio con descuento: $${finalPrice.toLocaleString('es-CO')}*\n\n`;
+      } else {
+        message += `   Precio: $${finalPrice.toLocaleString('es-CO')}\n\n`;
+      }
     });
 
     message += `-------------------\n`;
+    if (hasCouponInCart) {
+      message += `Subtotal: $${totalWithoutDiscount.toLocaleString('es-CO')}\n`;
+      message += `Descuento cupón: -$${savings.toLocaleString('es-CO')}\n`;
+    }
     message += `*TOTAL: $${total.toLocaleString('es-CO')}*\n\n`;
     message += `👤 Cliente: ${currentUser || 'No registrado'}\n`;
     message += `¿Está disponible mi pedido?`;
@@ -2388,16 +2447,34 @@ const CartDrawer = ({ isOpen, onClose, cart, removeFromCart, currentUser }) => {
             </div>
           ) : (
             cart.map((item, index) => {
-              const price = item.isPromo && item.promoPrice ? item.promoPrice : item.price;
+              const basePrice = item.isPromo && item.promoPrice ? item.promoPrice : item.price;
+              const finalPrice = item.hasCouponApplied ? Math.round(Number(basePrice) * 0.85) : Number(basePrice);
+              
               return (
-                <div key={`${item.id}-${item.selectedSize}-${index}`} className="flex gap-4 p-4 bg-neutral-50 rounded-2xl group hover:bg-neutral-100 transition-colors">
+                <div key={`${item.id}-${item.selectedSize}-${index}`} className={`flex gap-4 p-4 rounded-2xl group transition-colors relative ${item.hasCouponApplied ? 'bg-gradient-to-r from-amber-50 to-yellow-50 border-2 border-amber-200' : 'bg-neutral-50 hover:bg-neutral-100'}`}>
+                  {/* Badge de cupón */}
+                  {item.hasCouponApplied && (
+                    <div className="absolute -top-2 -right-2 bg-gradient-to-r from-amber-500 to-yellow-500 text-white text-[8px] font-black uppercase px-2 py-1 rounded-full shadow-lg flex items-center gap-1">
+                      <Gift size={10} />
+                      15% OFF
+                    </div>
+                  )}
+                  
                   <div className="w-20 h-20 bg-white rounded-xl overflow-hidden flex-shrink-0">
                     <img src={Array.isArray(item.image) ? item.image[0] : item.image} alt={item.name} className="w-full h-full object-cover" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <h4 className="font-bold text-sm truncate uppercase">{item.name}</h4>
                     <p className="text-[9px] text-neutral-400 font-bold uppercase tracking-widest">{item.brand} • Talla {item.selectedSize}</p>
-                    <p className="font-black text-amber-600 mt-1">${Number(price).toLocaleString('es-CO')}</p>
+                    
+                    {item.hasCouponApplied ? (
+                      <div className="mt-1">
+                        <p className="text-[10px] text-neutral-400 line-through">${Number(basePrice).toLocaleString('es-CO')}</p>
+                        <p className="font-black text-amber-600">${finalPrice.toLocaleString('es-CO')}</p>
+                      </div>
+                    ) : (
+                      <p className="font-black text-amber-600 mt-1">${finalPrice.toLocaleString('es-CO')}</p>
+                    )}
                   </div>
                   <button 
                     onClick={() => removeFromCart(index)}
@@ -2414,16 +2491,42 @@ const CartDrawer = ({ isOpen, onClose, cart, removeFromCart, currentUser }) => {
         {/* Footer con Total y Botón */}
         {cart.length > 0 && (
           <div className="p-6 border-t border-neutral-100 space-y-4 bg-white">
+            {/* Mostrar ahorro si hay cupón */}
+            {hasCouponInCart && (
+              <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2">
+                <Gift size={16} className="text-amber-600" />
+                <div className="flex-1">
+                  <p className="text-[10px] font-bold text-amber-700 uppercase">Cupón aplicado</p>
+                  <p className="text-[9px] text-amber-600">Ahorras ${savings.toLocaleString('es-CO')} en este pedido</p>
+                </div>
+              </div>
+            )}
+            
             <div className="flex justify-between items-center">
               <span className="text-sm font-bold uppercase text-neutral-400">Total</span>
-              <span className="text-2xl font-black text-amber-600">${total.toLocaleString('es-CO')}</span>
+              <div className="text-right">
+                {hasCouponInCart && (
+                  <span className="text-sm text-neutral-400 line-through mr-2">${totalWithoutDiscount.toLocaleString('es-CO')}</span>
+                )}
+                <span className="text-2xl font-black text-amber-600">${total.toLocaleString('es-CO')}</span>
+              </div>
             </div>
             <button 
               onClick={handleCheckoutWhatsApp}
-              className="w-full bg-black text-white py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-amber-600 transition-all flex items-center justify-center gap-2 shadow-xl"
+              disabled={isRedeeming}
+              className={`w-full bg-black text-white py-4 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-amber-600 transition-all flex items-center justify-center gap-2 shadow-xl ${isRedeeming ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              <MessageCircle size={16} />
-              Finalizar por WhatsApp
+              {isRedeeming ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Procesando...
+                </>
+              ) : (
+                <>
+                  <MessageCircle size={16} />
+                  Finalizar por WhatsApp
+                </>
+              )}
             </button>
             <p className="text-[9px] text-neutral-400 text-center">Te responderemos en minutos para confirmar disponibilidad</p>
           </div>
@@ -3367,7 +3470,7 @@ export default function App() {
   };
 
   // --- FUNCIONES DEL CARRITO ---
-  const addToCart = (product, selectedSize) => {
+  const addToCart = (product, selectedSize, applyCoupon = false) => {
     if (!selectedSize) {
       alert('Por favor, selecciona una talla');
       return false;
@@ -3380,10 +3483,18 @@ export default function App() {
       return false;
     }
 
+    // Verificar si ya hay un producto con cupón en el carrito
+    const cartHasCouponItem = cart.some(item => item.hasCouponApplied);
+    
+    // Solo aplicar cupón si: tiene cupón, no es promo, no hay otro item con cupón, y se pidió aplicar
+    const isPromoProduct = product.isPromo && product.promoPrice;
+    const shouldApplyCoupon = applyCoupon && userProfile?.hasCoupon && !isPromoProduct && !cartHasCouponItem;
+
     const cartItem = {
       ...product,
       selectedSize,
-      addedAt: Date.now()
+      addedAt: Date.now(),
+      hasCouponApplied: shouldApplyCoupon
     };
 
     setCart(prev => {
@@ -3562,6 +3673,7 @@ export default function App() {
           onOpenLogin={() => setIsLoginOpen(true)}
           userProfile={userProfile}
           onUseCoupon={redeemCoupon}
+          cart={cart}
         />
       )}
       <CartDrawer 
@@ -3570,6 +3682,8 @@ export default function App() {
         cart={cart} 
         removeFromCart={removeFromCart}
         currentUser={currentUser}
+        userProfile={userProfile}
+        onUseCoupon={redeemCoupon}
       />
       <AIAssistant isOpen={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} products={products} />
       <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} onLogin={(user) => { handleLogin(user); setIsLoginOpen(false); }} />
