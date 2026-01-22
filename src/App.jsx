@@ -2157,8 +2157,9 @@ const ProductModal = ({ product, onClose, addToCart, currentUser, onOpenLogin, u
     
     const encodedMessage = encodeURIComponent(message);
     const whatsappUrl = `https://wa.me/${phone}?text=${encodedMessage}`;
-    const w = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-    if (!w) window.location.href = whatsappUrl;
+    
+    // Abrir WhatsApp solo una vez
+    window.open(whatsappUrl, '_blank');
   };
 
   // Calcular nivel de hype dinámico basado en popularity o valor aleatorio
@@ -2337,8 +2338,9 @@ const ProductModal = ({ product, onClose, addToCart, currentUser, onOpenLogin, u
 };
 
 // --- CART DRAWER ---
-const CartDrawer = ({ isOpen, onClose, cart, removeFromCart, currentUser, userProfile, onUseCoupon }) => {
+const CartDrawer = ({ isOpen, onClose, cart, removeFromCart, clearCart, currentUser, userProfile, onUseCoupon }) => {
   const [isRedeeming, setIsRedeeming] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   
   if (!isOpen) return null;
 
@@ -2368,11 +2370,14 @@ const CartDrawer = ({ isOpen, onClose, cart, removeFromCart, currentUser, userPr
       return;
     }
 
-    if (isRedeeming) return; // Prevenir doble clic
+    if (isRedeeming || isProcessing) return; // Prevenir doble clic
+
+    setIsProcessing(true); // Bloquear múltiples clics
 
     const phone = (WHATSAPP_NUMBER || '').toString().replace(/\D/g, '');
     if (!phone) {
       alert('Número de WhatsApp no configurado');
+      setIsProcessing(false);
       return;
     }
 
@@ -2384,6 +2389,7 @@ const CartDrawer = ({ isOpen, onClose, cart, removeFromCart, currentUser, userPr
       
       if (!redeemed) {
         alert('Tu cupón ya fue utilizado. Por favor, actualiza tu carrito.');
+        setIsProcessing(false);
         return; // No continuar si el cupón ya fue usado
       }
     }
@@ -2418,8 +2424,14 @@ const CartDrawer = ({ isOpen, onClose, cart, removeFromCart, currentUser, userPr
 
     const encodedMessage = encodeURIComponent(message);
     const whatsappUrl = `https://wa.me/${phone}?text=${encodedMessage}`;
-    const w = window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-    if (!w) window.location.href = whatsappUrl;
+    
+    // Abrir WhatsApp solo una vez
+    window.open(whatsappUrl, '_blank');
+    
+    // Limpiar carrito después de enviar a WhatsApp
+    if (clearCart) clearCart();
+    setIsProcessing(false);
+    onClose();
   };
 
   return (
@@ -3681,6 +3693,7 @@ export default function App() {
         onClose={() => setIsCartOpen(false)} 
         cart={cart} 
         removeFromCart={removeFromCart}
+        clearCart={clearCart}
         currentUser={currentUser}
         userProfile={userProfile}
         onUseCoupon={redeemCoupon}
