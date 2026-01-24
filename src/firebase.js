@@ -1,11 +1,19 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
 import { getFirestore } from 'firebase/firestore';
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+import { 
+  getAuth, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signInWithPopup, 
+  GoogleAuthProvider,
+  sendPasswordResetEmail,
+  signOut,
+  onAuthStateChanged,
+  updateProfile
+} from 'firebase/auth';
 
 // Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyBvg5GD5frY0ZgopW3lnyy1E5JpPDHMHdY",
   authDomain: "verzing-app-e0abc.firebaseapp.com",
@@ -19,6 +27,36 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
+
+// Initialize Firebase Auth
+export const auth = getAuth(app);
+
+// Google Auth Provider
+export const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({
+  prompt: 'select_account'
+});
+
+// Auth helper functions
+export const loginWithEmail = (email, password) => 
+  signInWithEmailAndPassword(auth, email, password);
+
+export const registerWithEmail = (email, password) => 
+  createUserWithEmailAndPassword(auth, email, password);
+
+export const loginWithGoogle = () => 
+  signInWithPopup(auth, googleProvider);
+
+export const resetPassword = (email) => 
+  sendPasswordResetEmail(auth, email);
+
+export const logout = () => 
+  signOut(auth);
+
+export const updateUserProfile = (user, data) =>
+  updateProfile(user, data);
+
+export { onAuthStateChanged };
 
 // Helpful flag used by the app to detect if firebaseConfig has been populated
 export const firebaseConfigured = Boolean(

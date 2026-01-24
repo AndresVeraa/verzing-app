@@ -28,7 +28,7 @@ import {
   Award
 } from 'lucide-react';
 
-import { db, firebaseConfigured } from './firebase';
+import { db, firebaseConfigured, auth, loginWithEmail, registerWithEmail, loginWithGoogle, resetPassword, logout, updateUserProfile, onAuthStateChanged } from './firebase';
 import { collection, query, orderBy, onSnapshot, addDoc, setDoc, deleteDoc, doc, serverTimestamp, getDoc, updateDoc } from 'firebase/firestore';
 import AboutUs from './AboutUs';
 
@@ -250,7 +250,7 @@ async function seedAdmin() {
 // --- COMPONENTES ---
 
 const LoginModal = ({ isOpen, onClose, onLogin }) => {
-  const [mode, setMode] = useState('login'); // 'login' | 'register'
+  const [mode, setMode] = useState('login'); // 'login' | 'register' | 'forgot'
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -259,6 +259,7 @@ const LoginModal = ({ isOpen, onClose, onLogin }) => {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -272,6 +273,7 @@ const LoginModal = ({ isOpen, onClose, onLogin }) => {
       setEmail('');
       setPhone('');
       setError('');
+      setSuccess('');
       setLoading(false);
     }
   }, [isOpen]);
@@ -281,28 +283,130 @@ const LoginModal = ({ isOpen, onClose, onLogin }) => {
   const validateEmail = (e) => /\S+@\S+\.\S+/.test(e);
   const validatePhone = (p) => /^\+?\d{7,15}$/.test(p);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleGoogleSignIn = async () => {
     setError('');
     setLoading(true);
     try {
-      if (mode === 'login') {
-        if (!username.trim() || !password) {
-          setError('Completa usuario y contraseña');
-          setLoading(false);
-          return;
-        }
-        const user = await verifyUser(username.trim(), password);
-        if (!user) {
-          setError('Credenciales inválidas');
-          setLoading(false);
-          return;
-        }
-        onLogin(user);
-        onClose();
+      const result = await loginWithGoogle();
+      const user = result.user;
+      
+      // Extraer datos del usuario de Google
+      const displayName = user.displayName || 'Usuario';
+      const nameParts = displayName.split(' ');
+      const googleFirstName = nameParts[0] || '';
+      const googleLastName = nameParts.slice(1).join(' ') || '';
+      
+      const userData = {
+        username: user.uid,
+        uid: user.uid,
+        email: user.email,
+        firstName: googleFirstName,
+        lastName: googleLastName,
+        phone: user.phoneNumber || '',
+        role: 'user',
+        isGoogleUser: true
+      };
+      
+      onLogin(userData);
+      
+      // Mostrar bienvenida para nuevos usuarios de Google
+      if (result._tokenResponse?.isNewUser) {
+        alert(`¡Bienvenido/a ${googleFirstName}! 🎉\n\nTu cuenta ha sido creada con Google.\n\n🎁 Completa la encuesta en "Mi Perfil" para obtener un cupón de 15% OFF en tu primera compra.`);
+      }
+      
+      onClose();
+    } catch (err) {
+      console.error('Google sign-in error:', err);
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError('Inicio de sesión cancelado');
+      } else if (err.code === 'auth/popup-blocked') {
+        setError('El navegador bloqueó la ventana emergente. Permite ventanas emergentes e intenta de nuevo.');
       } else {
-        // register
-        if (!firstName.trim() || !lastName.trim() || !email.trim() || !phone.trim() || !username.trim() || !password) {
+        setError(err.message || 'Error al iniciar con Google');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    
+    if (!email.trim()) {
+      setError('Ingresa tu correo electrónico');
+      setLoading(false);
+      return;
+    }
+    
+    if (!validateEmail(email.trim())) {
+      setError('Correo electrónico no válido');
+      setLoading(false);
+      return;
+    }
+    
+    try {
+      await resetPassword(email.trim());
+      setSuccess('📧 Se ha enviado un enlace de recuperación a tu correo electrónico. Revisa tu bandeja de entrada (y spam).');
+      setEmail('');
+    } catch (err) {
+      console.error('Reset password error:', err);
+      if (err.code === 'auth/user-not-found') {
+        setError('No existe una cuenta con este correo');
+      } else if (err.code === 'auth/too-many-requests') {
+        setError('Demasiados intentos. Espera unos minutos.');
+      } else {
+        setError(err.message || 'Error al enviar correo de recuperación');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    
+    try {
+      if (mode === 'login') {
+        if (!email.trim() || !password) {
+          setError('Completa correo y contraseña');
+          setLoading(false);
+          return;
+        }
+        
+        if (!validateEmail(email.trim())) {
+          setError('Correo electrónico no válido');
+          setLoading(false);
+          return;
+        }
+        
+        const userCredential = await loginWithEmail(email.trim(), password);
+        const user = userCredential.user;
+        
+        // Obtener displayName del usuario
+        const displayName = user.displayName || '';
+        const nameParts = displayName.split(' ');
+        
+        const userData = {
+          username: user.uid,
+          uid: user.uid,
+          email: user.email,
+          firstName: nameParts[0] || '',
+          lastName: nameParts.slice(1).join(' ') || '',
+          role: 'user'
+        };
+        
+        onLogin(userData);
+        onClose();
+        
+      } else if (mode === 'register') {
+        // Validar todos los campos
+        if (!firstName.trim() || !lastName.trim() || !email.trim() || !phone.trim() || !password) {
           setError('Completa todos los campos');
           setLoading(false);
           return;
@@ -317,24 +421,59 @@ const LoginModal = ({ isOpen, onClose, onLogin }) => {
           setLoading(false);
           return;
         }
+        if (password.length < 6) {
+          setError('La contraseña debe tener al menos 6 caracteres');
+          setLoading(false);
+          return;
+        }
         if (password !== confirm) {
           setError('Las contraseñas no coinciden');
           setLoading(false);
           return;
         }
-        if (username.trim().toLowerCase() === 'admin') {
-          setError('El nombre de usuario "admin" está reservado');
-          setLoading(false);
-          return;
-        }
-        const newUser = await createUser({ username: username.trim(), password, role: 'user', firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(), phone: phone.trim() });
+        
+        // Crear usuario en Firebase Auth
+        const userCredential = await registerWithEmail(email.trim(), password);
+        const user = userCredential.user;
+        
+        // Actualizar el perfil con nombre y apellido
+        await updateUserProfile(user, {
+          displayName: `${firstName.trim()} ${lastName.trim()}`
+        });
+        
+        const userData = {
+          username: user.uid,
+          uid: user.uid,
+          email: user.email,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          phone: phone.trim(),
+          role: 'user'
+        };
+        
         // Mostrar aviso de registro exitoso
         alert(`¡Bienvenido/a ${firstName.trim()}! 🎉\n\nTu cuenta ha sido creada exitosamente.\n\n🎁 Completa la encuesta en "Mi Perfil" para obtener un cupón de 15% OFF en tu primera compra.`);
-        onLogin(newUser);
+        onLogin(userData);
         onClose();
       }
     } catch (err) {
-      setError(err?.message || 'Error');
+      console.error('Auth error:', err);
+      // Mapear errores de Firebase a mensajes en español
+      if (err.code === 'auth/email-already-in-use') {
+        setError('Este correo ya está registrado');
+      } else if (err.code === 'auth/invalid-email') {
+        setError('Correo electrónico no válido');
+      } else if (err.code === 'auth/weak-password') {
+        setError('La contraseña es muy débil (mínimo 6 caracteres)');
+      } else if (err.code === 'auth/user-not-found') {
+        setError('No existe una cuenta con este correo');
+      } else if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setError('Credenciales incorrectas');
+      } else if (err.code === 'auth/too-many-requests') {
+        setError('Demasiados intentos fallidos. Espera unos minutos.');
+      } else {
+        setError(err?.message || 'Error de autenticación');
+      }
     } finally {
       setLoading(false);
     }
@@ -351,47 +490,71 @@ const LoginModal = ({ isOpen, onClose, onLogin }) => {
           <div className="w-14 h-14 bg-neutral-100 rounded-2xl flex items-center justify-center mx-auto mb-4 text-amber-600">
             <User size={28} />
           </div>
-          <h2 className="text-2xl font-black uppercase tracking-tighter">{mode === 'login' ? 'Acceso' : 'Registro'}</h2>
-          <p className="text-sm text-neutral-400 mt-1 font-medium">{mode === 'login' ? 'Ingresa con tu usuario' : 'Crea una cuenta segura'}</p>
+          <h2 className="text-2xl font-black uppercase tracking-tighter">
+            {mode === 'login' ? 'Acceso' : mode === 'register' ? 'Registro' : 'Recuperar Contraseña'}
+          </h2>
+          <p className="text-sm text-neutral-400 mt-1 font-medium">
+            {mode === 'login' ? 'Ingresa con tu correo' : mode === 'register' ? 'Crea una cuenta segura' : 'Te enviaremos un enlace'}
+          </p>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === 'register' && (
-            <div className="grid grid-cols-2 gap-3">
-              <input
-                type="text"
-                value={firstName}
-                onChange={(e) => { setFirstName(e.target.value); setError(''); }}
-                className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
-                placeholder="Nombre"
-              />
-              <input
-                type="text"
-                value={lastName}
-                onChange={(e) => { setLastName(e.target.value); setError(''); }}
-                className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
-                placeholder="Apellido"
-              />
+        
+        {/* Modo: Olvidé mi contraseña */}
+        {mode === 'forgot' ? (
+          <form onSubmit={handleForgotPassword} className="space-y-4">
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); setError(''); setSuccess(''); }}
+              className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
+              placeholder="Correo electrónico"
+              autoFocus
+            />
+            
+            {error && <p className="text-rose-500 text-xs text-center font-bold uppercase">{error}</p>}
+            {success && <p className="text-emerald-600 text-xs text-center font-medium">{success}</p>}
+            
+            <button type="submit" disabled={loading} className="w-full bg-black text-white py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-amber-600 transition-all disabled:opacity-50">
+              {loading ? 'Enviando...' : 'Enviar enlace de recuperación'}
+            </button>
+            
+            <div className="text-center text-xs text-neutral-500 mt-2">
+              <button type="button" onClick={() => { setMode('login'); setError(''); setSuccess(''); }} className="underline">
+                Volver al inicio de sesión
+              </button>
             </div>
-          )}
+          </form>
+        ) : (
+          /* Modo: Login o Registro */
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {mode === 'register' && (
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => { setFirstName(e.target.value); setError(''); }}
+                  className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
+                  placeholder="Nombre"
+                />
+                <input
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => { setLastName(e.target.value); setError(''); }}
+                  className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
+                  placeholder="Apellido"
+                />
+              </div>
+            )}
 
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => { setUsername(e.target.value); setError(''); }}
-            className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
-            placeholder="Nombre de usuario (único)"
-            autoFocus
-          />
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => { setEmail(e.target.value); setError(''); }}
+              className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
+              placeholder="Correo electrónico"
+              autoFocus
+            />
 
-          {mode === 'register' && (
-            <>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => { setEmail(e.target.value); setError(''); }}
-                className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
-                placeholder="Correo electrónico"
-              />
+            {mode === 'register' && (
               <input
                 type="tel"
                 value={phone}
@@ -399,41 +562,74 @@ const LoginModal = ({ isOpen, onClose, onLogin }) => {
                 className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
                 placeholder="Teléfono (ej +573xx...)"
               />
-            </>
-          )}
+            )}
 
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => { setPassword(e.target.value); setError(''); }}
-            className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
-            placeholder="Contraseña"
-          />
-
-          {mode === 'register' && (
             <input
               type="password"
-              value={confirm}
-              onChange={(e) => { setConfirm(e.target.value); setError(''); }}
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setError(''); }}
               className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
-              placeholder="Confirmar contraseña"
+              placeholder="Contraseña"
             />
-          )}
 
-          {error && <p className="text-rose-500 text-xs text-center font-bold uppercase">{error}</p>}
-
-          <button type="submit" disabled={loading} className="w-full bg-black text-white py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-amber-600 transition-all">
-            {loading ? 'Procesando...' : (mode === 'login' ? 'Iniciar sesión' : 'Registrarme')}
-          </button>
-
-          <div className="text-center text-xs text-neutral-500 mt-2">
-            {mode === 'login' ? (
-              <button type="button" onClick={() => setMode('register')} className="underline">¿No tienes cuenta? Regístrate</button>
-            ) : (
-              <button type="button" onClick={() => setMode('login')} className="underline">¿Ya tienes cuenta? Ingresa</button>
+            {mode === 'register' && (
+              <input
+                type="password"
+                value={confirm}
+                onChange={(e) => { setConfirm(e.target.value); setError(''); }}
+                className="w-full bg-neutral-50 border-2 border-neutral-100 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:border-amber-600 transition-all"
+                placeholder="Confirmar contraseña"
+              />
             )}
-          </div>
-        </form>
+
+            {error && <p className="text-rose-500 text-xs text-center font-bold uppercase">{error}</p>}
+
+            <button type="submit" disabled={loading} className="w-full bg-black text-white py-3 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-amber-600 transition-all disabled:opacity-50">
+              {loading ? 'Procesando...' : (mode === 'login' ? 'Iniciar sesión' : 'Registrarme')}
+            </button>
+            
+            {mode === 'login' && (
+              <button 
+                type="button" 
+                onClick={() => { setMode('forgot'); setError(''); setSuccess(''); }}
+                className="w-full text-xs text-amber-600 hover:text-amber-700 font-medium transition-colors"
+              >
+                ¿Olvidaste tu contraseña?
+              </button>
+            )}
+            
+            {/* Separador */}
+            <div className="flex items-center gap-3 my-2">
+              <div className="flex-1 h-px bg-neutral-200"></div>
+              <span className="text-[10px] text-neutral-400 uppercase tracking-wider">o continúa con</span>
+              <div className="flex-1 h-px bg-neutral-200"></div>
+            </div>
+            
+            {/* Botón de Google */}
+            <button 
+              type="button" 
+              onClick={handleGoogleSignIn}
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-3 bg-white border-2 border-neutral-200 py-3 rounded-2xl text-sm font-semibold hover:bg-neutral-50 hover:border-neutral-300 transition-all disabled:opacity-50"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              </svg>
+              Continuar con Google
+            </button>
+
+            <div className="text-center text-xs text-neutral-500 mt-2">
+              {mode === 'login' ? (
+                <button type="button" onClick={() => { setMode('register'); setError(''); }} className="underline">¿No tienes cuenta? Regístrate</button>
+              ) : (
+                <button type="button" onClick={() => { setMode('login'); setError(''); }} className="underline">¿Ya tienes cuenta? Ingresa</button>
+              )}
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -3466,14 +3662,30 @@ export default function App() {
   }, []);
 
   const handleLogin = (user) => {
-    const displayName = (user.firstName || user.lastName) ? `${(user.firstName || '').trim()} ${(user.lastName || '').trim()}`.trim() : user.username;
+    const displayName = (user.firstName || user.lastName) ? `${(user.firstName || '').trim()} ${(user.lastName || '').trim()}`.trim() : (user.email || user.username);
+    const uid = user.uid || user.username;
     setCurrentUser(displayName);
-    setUserRole(user.role);
-    setUserUid(user.username); // Usar username como uid para el perfil en Firestore
-    localStorage.setItem('verzing_session', JSON.stringify({ username: user.username, role: user.role, displayName }));
+    setUserRole(user.role || 'user');
+    setUserUid(uid); // Usar uid de Firebase para el perfil en Firestore
+    localStorage.setItem('verzing_session', JSON.stringify({ 
+      username: uid, 
+      uid: uid,
+      role: user.role || 'user', 
+      displayName,
+      email: user.email || '',
+      firstName: user.firstName || '',
+      lastName: user.lastName || '',
+      phone: user.phone || '',
+      isGoogleUser: user.isGoogleUser || false
+    }));
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await logout(); // Firebase signOut
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
     setCurrentUser(null);
     setUserRole(null);
     setUserUid(null);
